@@ -130,7 +130,7 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
   return (
     <div className="h-full flex flex-col bg-sidebar">
       {/* Tab bar */}
-      <div className="flex items-center border-b border-border bg-[oklch(0.16_0_0)]">
+      <div className="flex items-center border-b border-border bg-panel-header">
         <div className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 overflow-x-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon
@@ -195,7 +195,7 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
 
           {/* Asset toolbar */}
           <div className="flex-1 flex flex-col">
-            <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border bg-[oklch(0.16_0_0)]">
+            <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border bg-panel-header">
               <button className="p-1 rounded hover:bg-accent text-muted-foreground">
                 <Plus className="h-4 w-4" />
               </button>
