@@ -20,13 +20,6 @@ import { ThemeToggle } from '@/components/theme-toggle'
 export function TitleBar() {
   return (
     <div className="flex items-center h-11 px-2 bg-toolbar text-toolbar-foreground border-b border-border select-none">
-      {/* macOS-style window controls (decorative) */}
-      <div className="flex items-center gap-2 px-2">
-        <div className="w-3 h-3 rounded-full bg-[#ff5f57]" />
-        <div className="w-3 h-3 rounded-full bg-[#febc2e]" />
-        <div className="w-3 h-3 rounded-full bg-[#28c840]" />
-      </div>
-
       {/* Left actions */}
       <div className="flex items-center gap-0.5 ml-3">
         <button className="p-1.5 rounded hover:bg-accent text-toolbar-foreground" title="导航器">
