@@ -1,5 +1,5 @@
 {
-  "name": "my-project",
+  "name": "web-scene-composer",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,9 +10,15 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
+    "@foxglove/rosmsg-msgs-common": "^3.2.3",
+    "@foxglove/rosmsg2-serialization": "^3.1.2",
+    "@foxglove/ws-protocol": "^0.8.0",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
     "@vercel/analytics": "1.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jotai": "^2.20.0",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
     "next-themes": "^0.4.6",
@@ -21,6 +27,7 @@
     "react-resizable-panels": "^4.11.2",
     "shadcn": "^4.8.0",
     "tailwind-merge": "^3.3.1",
+    "three": "^0.184.0",
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
@@ -28,6 +35,7 @@
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.184.1",
     "postcss": "^8.5",
     "tailwindcss": "^4.2.0",
     "typescript": "5.7.3"

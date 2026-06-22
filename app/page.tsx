@@ -1,79 +1,119 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 import {
   Panel,
   Group as PanelGroup,
   Separator as PanelResizeHandle,
   usePanelRef,
+  type PanelImperativeHandle,
 } from 'react-resizable-panels'
+import { useAtom } from 'jotai'
 import { TitleBar } from '@/components/title-bar'
 import { SceneHierarchy } from '@/components/scene-hierarchy'
 import { Viewport } from '@/components/viewport'
 import { Inspector } from '@/components/inspector'
 import { ProjectBrowser } from '@/components/project-browser'
+import { uiPanelsAtom } from '@/lib/scene/atoms'
+import { PanelCollapseRail } from '@/components/panel-collapse-rail'
+import { CreateContextMenu } from '@/components/create-context-menu'
 
 export default function WebSceneComposer() {
-  const [bottomCollapsed, setBottomCollapsed] = useState(false)
+  const [uiPanels, setUiPanels] = useAtom(uiPanelsAtom)
+  const leftPanelRef = usePanelRef()
+  const rightPanelRef = usePanelRef()
   const bottomPanelRef = usePanelRef()
 
-  const handleBottomToggle = useCallback(() => {
-    const panel = bottomPanelRef.current
-    if (panel) {
+  const togglePanel = useCallback(
+    (panelRef: React.RefObject<PanelImperativeHandle | null>, key: 'leftOpen' | 'rightOpen' | 'bottomOpen') => {
+      const panel = panelRef.current
+      if (!panel) return
+
       if (panel.isCollapsed()) {
         panel.expand()
+        setUiPanels((prev) => ({ ...prev, [key]: true }))
       } else {
         panel.collapse()
+        setUiPanels((prev) => ({ ...prev, [key]: false }))
       }
-    }
-  }, [bottomPanelRef])
+    },
+    [setUiPanels],
+  )
+
+  const handleBottomToggle = useCallback(() => {
+    togglePanel(bottomPanelRef, 'bottomOpen')
+  }, [bottomPanelRef, togglePanel])
+
+  const handleLeftToggle = useCallback(() => {
+    togglePanel(leftPanelRef, 'leftOpen')
+  }, [leftPanelRef, togglePanel])
+
+  const handleRightToggle = useCallback(() => {
+    togglePanel(rightPanelRef, 'rightOpen')
+  }, [rightPanelRef, togglePanel])
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
-      {/* Title bar */}
-      <TitleBar />
+      <CreateContextMenu />
+      <TitleBar
+        onToggleLeft={handleLeftToggle}
+        onToggleRight={handleRightToggle}
+        leftOpen={uiPanels.leftOpen}
+        rightOpen={uiPanels.rightOpen}
+      />
 
-      {/* Main content area */}
       <div className="flex-1 overflow-hidden">
         <PanelGroup orientation="vertical" className="h-full">
-          {/* Top section - main editing area */}
           <Panel defaultSize="70%" minSize="30%">
             <PanelGroup orientation="horizontal" className="h-full">
-              {/* Left sidebar - Scene Hierarchy */}
-              <Panel 
-                defaultSize="15%" 
-                minSize="180px" 
+              <Panel
+                panelRef={leftPanelRef}
+                defaultSize="18%"
+                minSize="180px"
                 maxSize="30%"
+                collapsible
+                collapsedSize="0px"
               >
-                <SceneHierarchy />
+                <div className="h-full relative flex">
+                  <SceneHierarchy />
+                  <PanelCollapseRail
+                    side="left"
+                    isOpen={uiPanels.leftOpen}
+                    onToggle={handleLeftToggle}
+                  />
+                </div>
               </Panel>
 
               <PanelResizeHandle className="w-1 bg-border hover:bg-primary transition-colors cursor-col-resize" />
 
-              {/* Center - Viewport */}
-              <Panel 
-                defaultSize="60%" 
-                minSize="30%"
-              >
+              <Panel defaultSize="57%" minSize="30%">
                 <Viewport />
               </Panel>
 
               <PanelResizeHandle className="w-1 bg-border hover:bg-primary transition-colors cursor-col-resize" />
 
-              {/* Right sidebar - Inspector */}
-              <Panel 
-                defaultSize="25%" 
-                minSize="220px" 
+              <Panel
+                panelRef={rightPanelRef}
+                defaultSize="25%"
+                minSize="220px"
                 maxSize="35%"
+                collapsible
+                collapsedSize="0px"
               >
-                <Inspector />
+                <div className="h-full relative flex">
+                  <PanelCollapseRail
+                    side="right"
+                    isOpen={uiPanels.rightOpen}
+                    onToggle={handleRightToggle}
+                  />
+                  <Inspector />
+                </div>
               </Panel>
             </PanelGroup>
           </Panel>
 
           <PanelResizeHandle className="h-1 bg-border hover:bg-primary transition-colors cursor-row-resize" />
 
-          {/* Bottom section - Project Browser */}
           <Panel
             panelRef={bottomPanelRef}
             defaultSize="30%"
@@ -81,15 +121,9 @@ export default function WebSceneComposer() {
             maxSize="50%"
             collapsible
             collapsedSize="40px"
-            onResize={(size) => {
-              const panel = bottomPanelRef.current
-              if (panel) {
-                setBottomCollapsed(panel.isCollapsed())
-              }
-            }}
           >
             <ProjectBrowser
-              isCollapsed={bottomCollapsed}
+              isCollapsed={!uiPanels.bottomOpen}
               onToggleCollapse={handleBottomToggle}
             />
           </Panel>
