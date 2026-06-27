@@ -53,6 +53,8 @@ export const contextMenuAtom = atom<{
   x: number
   y: number
   target: 'viewport' | 'hierarchy'
+  /** 层级树右键时指向的节点；视口右键则用当前选中 */
+  nodeId?: string | null
 } | null>(null)
 
 export const composedStageAtom = atom<SceneTreeNode[]>((get) => {
@@ -102,7 +104,10 @@ export const updateNodeTransformAtom = atom(
 
 export const updateNodePropsAtom = atom(
   null,
-  (get, set, update: { id: string; props: Partial<Pick<SceneNode, 'lightIntensity' | 'lightColor' | 'name'>> }) => {
+  (get, set, update: {
+    id: string
+    props: Partial<Pick<SceneNode, 'lightIntensity' | 'lightColor' | 'lightTarget' | 'name'>>
+  }) => {
     const nodes = get(sceneNodesAtom)
     const node = nodes[update.id]
     if (!node) return

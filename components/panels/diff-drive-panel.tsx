@@ -11,9 +11,6 @@ import {
   cmdVelAdvertisedAtom,
   FOXGLOVE_WS_URL,
 } from '@/lib/ros/atoms'
-import { useGamepadCmdVel } from '@/hooks/use-gamepad-cmdvel'
-import { useCmdVelChannel } from '@/hooks/use-cmd-vel-channel'
-import { useGamepadDetection } from '@/hooks/use-gamepad-detection'
 import { cn } from '@/lib/utils'
 
 function TuningField({
@@ -55,10 +52,6 @@ export function DiffDrivePanel() {
   const simulateStatus = useAtomValue(simulateStatusAtom)
   const cmdVelAdvertised = useAtomValue(cmdVelAdvertisedAtom)
 
-  useGamepadDetection(true)
-  useCmdVelChannel(true)
-  useGamepadCmdVel(true)
-
   const simActive = simulateStatus === 'connected'
 
   const gamepadHint = connected
@@ -66,9 +59,8 @@ export function DiffDrivePanel() {
     : '未检测到 — 先点击本页面任意处，再按手柄 A/B/RT 等任意键唤醒'
 
   return (
-    <div className="flex-1 flex overflow-hidden">
-      <div className="flex-1 overflow-auto p-4 space-y-4">
-        <div className="flex items-center gap-2">
+    <div className="p-4 space-y-4">
+      <div className="flex items-center gap-2">
           <Gamepad2 className="h-5 w-5 text-primary" />
           <div>
             <h3 className="text-sm font-medium">差速驱动控制器</h3>
@@ -164,7 +156,6 @@ export function DiffDrivePanel() {
             </p>
           )}
         </div>
-      </div>
     </div>
   )
 }

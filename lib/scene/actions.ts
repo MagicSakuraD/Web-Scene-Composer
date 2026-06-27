@@ -1,5 +1,7 @@
 import type { SceneNode, NodeType } from './types'
-import { DEFAULT_TRANSFORM, ROBOT_ASSET_URL } from './types'
+import { DEFAULT_TRANSFORM } from './types'
+import { removeGltfDescendants } from './gltf-hierarchy'
+import { VIEWPORT_PHYSICAL_LIGHT_ID } from '@/lib/viewport/physical-light-node'
 
 let nodeCounter = 0
 
@@ -15,7 +17,7 @@ const NODE_NAMES: Record<NodeType, string> = {
   sphere: 'Sphere',
   'distant-light': 'Distant Light',
   'point-light': 'Point Light',
-  'asset-ref': 'Robot',
+  'asset-ref': 'Asset',
 }
 
 const NODE_DEFAULTS: Partial<Record<NodeType, Partial<SceneNode>>> = {
@@ -53,14 +55,6 @@ const NODE_DEFAULTS: Partial<Record<NodeType, Partial<SceneNode>>> = {
     },
     lightIntensity: 2,
     lightColor: '#fff5e6',
-  },
-  'asset-ref': {
-    transform: {
-      position: [0, 0, 0],
-      rotation: [0, 0, 0],
-      scale: [1, 1, 1],
-    },
-    assetUrl: ROBOT_ASSET_URL,
   },
 }
 
@@ -115,4 +109,40 @@ export function addAssetNodeToScene(
     nodes: { ...nodes, [newNode.id]: newNode },
     newNode,
   }
+}
+
+function collectSubtreeIds(nodes: Record<string, SceneNode>, rootId: string): Set<string> {
+  const ids = new Set<string>()
+  const stack = [rootId]
+  while (stack.length > 0) {
+    const id = stack.pop()!
+    ids.add(id)
+    for (const node of Object.values(nodes)) {
+      if (node.parentId === id) stack.push(node.id)
+    }
+  }
+  return ids
+}
+
+/** 删除节点及其子树；asset-ref 会一并移除 glTF 内部层级。不可删除 root。 */
+export function removeNodeFromScene(
+  nodes: Record<string, SceneNode>,
+  nodeId: string,
+): Record<string, SceneNode> | null {
+  if (nodeId === 'root') return null
+  if (nodeId === VIEWPORT_PHYSICAL_LIGHT_ID) return null
+  const node = nodes[nodeId]
+  if (!node) return null
+
+  if (node.type === 'asset-ref') {
+    const next = removeGltfDescendants({ ...nodes }, nodeId)
+    delete next[nodeId]
+    return next
+  }
+
+  const next = { ...nodes }
+  for (const id of collectSubtreeIds(next, nodeId)) {
+    delete next[id]
+  }
+  return next
 }

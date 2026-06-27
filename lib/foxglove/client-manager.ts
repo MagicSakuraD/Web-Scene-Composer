@@ -1,6 +1,17 @@
 import { FoxgloveClient } from '@foxglove/ws-protocol'
 import type { Channel, ClientChannelId, SubscriptionId } from '@foxglove/ws-protocol'
-import { encodeTwist, decodeOdometry, type CmdVel } from '@/lib/foxglove/ros-serialization'
+import {
+  encodeTwist,
+  decodeOdometry,
+  decodeImageMessage,
+  decodePointCloud2,
+  isCameraImageTopic,
+  isLidarPointCloudTopic,
+  preferCompressedCameraTopics,
+  type CmdVel,
+  type DecodedCameraFrame,
+  type DecodedPointCloud,
+} from '@/lib/foxglove/ros-serialization'
 import { FOXGLOVE_WS_CANDIDATES, FOXGLOVE_WS_SUBPROTOCOLS } from '@/lib/ros/foxglove-config'
 import {
   CMD_VEL_TOPIC,
@@ -10,6 +21,31 @@ import {
 
 type LogFn = (entry: Omit<SimulateLogEntry, 'id' | 'time'>) => void
 type OdomFn = (pose: ReturnType<typeof decodeOdometry>) => void
+type ImageFrameFn = (topic: string, frame: DecodedCameraFrame) => void
+type PointCloudFn = (topic: string, cloud: DecodedPointCloud) => void
+type TopicsListener = () => void
+
+const EMPTY_CAMERA_TOPICS: readonly string[] = []
+const EMPTY_LIDAR_TOPICS: readonly string[] = []
+
+interface ImageSubscription {
+  topic: string
+  channelId: number | null
+  subscriptionId: SubscriptionId | null
+  schemaName: string
+  callbacks: Set<ImageFrameFn>
+  lastFrameAt: number
+}
+
+interface PointCloudSubscription {
+  topic: string
+  channelId: number | null
+  subscriptionId: SubscriptionId | null
+  schemaName: string
+  callbacks: Set<PointCloudFn>
+}
+
+const IMAGE_UI_MAX_FPS = 30
 
 class FoxgloveBridgeManager {
   private client: FoxgloveClient | null = null
@@ -22,6 +58,13 @@ class FoxgloveBridgeManager {
   private connectGeneration = 0
   private log: LogFn = () => {}
   private onOdom: OdomFn = () => {}
+  private channels: Channel[] = []
+  private cachedCameraTopics: readonly string[] = EMPTY_CAMERA_TOPICS
+  private cachedLidarTopics: readonly string[] = EMPTY_LIDAR_TOPICS
+  private imageSubs = new Map<string, ImageSubscription>()
+  private pointCloudSubs = new Map<string, PointCloudSubscription>()
+  private topicListeners = new Set<TopicsListener>()
+  private lidarTopicListeners = new Set<TopicsListener>()
 
   /** Simulate：建立 WebSocket 并订阅 odom（自动尝试 127.0.0.1 / localhost） */
   async connect(log: LogFn, onOdom: OdomFn): Promise<void> {
@@ -99,18 +142,38 @@ class FoxgloveBridgeManager {
 
         client.on('advertise', (channels: Channel[]) => {
           if (generation !== this.connectGeneration) return
-          const odom = channels.find((c) => c.topic === ODOM_TOPIC)
-          if (odom && this.odomSubscriptionId == null) {
-            this.odomChannelId = odom.id
-            this.odomSubscriptionId = client.subscribe(odom.id)
-            this.log({ level: 'info', message: `已订阅 ${ODOM_TOPIC}` })
-          }
+          this.channels = channels
+          this.notifyTopicListeners()
+          this.notifyLidarTopicListeners()
+          this.syncOdomSubscription(client)
+          this.syncImageSubscriptions(client)
+          this.syncPointCloudSubscriptions(client)
         })
 
         client.on('message', (event) => {
-          if (event.channelId !== this.odomChannelId) return
-          const pose = decodeOdometry(new Uint8Array(event.data))
-          if (pose) this.onOdom(pose)
+          if (generation !== this.connectGeneration) return
+
+          if (event.subscriptionId === this.odomSubscriptionId) {
+            const bytes =
+              event.data instanceof Uint8Array
+                ? event.data
+                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const pose = decodeOdometry(bytes)
+            if (pose) this.onOdom(pose)
+            return
+          }
+
+          for (const sub of this.imageSubs.values()) {
+            if (sub.subscriptionId !== event.subscriptionId) continue
+            void this.handleImageMessage(sub, event.data)
+            return
+          }
+
+          for (const sub of this.pointCloudSubs.values()) {
+            if (sub.subscriptionId !== event.subscriptionId) continue
+            this.handlePointCloudMessage(sub, event.data)
+            return
+          }
         })
 
         client.on('error', (err) => {
@@ -146,6 +209,220 @@ class FoxgloveBridgeManager {
     })
   }
 
+  private syncOdomSubscription(client: FoxgloveClient) {
+    const odom = this.channels.find((c) => c.topic === ODOM_TOPIC)
+    if (odom && this.odomSubscriptionId == null) {
+      this.odomChannelId = odom.id
+      this.odomSubscriptionId = client.subscribe(odom.id)
+      this.log({ level: 'info', message: `已订阅 ${ODOM_TOPIC}` })
+    }
+  }
+
+  private syncImageSubscriptions(client: FoxgloveClient) {
+    for (const sub of this.imageSubs.values()) {
+      if (sub.callbacks.size === 0) continue
+      const channel = this.channels.find((c) => c.topic === sub.topic)
+      if (!channel) continue
+      if (sub.subscriptionId != null) continue
+      sub.channelId = channel.id
+      sub.schemaName = channel.schemaName
+      sub.subscriptionId = client.subscribe(channel.id)
+      this.log({ level: 'info', message: `摄像头已订阅 ${sub.topic}` })
+    }
+  }
+
+  private async handleImageMessage(sub: ImageSubscription, data: ArrayBuffer | ArrayBufferView) {
+    const now = performance.now()
+    const minInterval = 1000 / IMAGE_UI_MAX_FPS
+    if (now - sub.lastFrameAt < minInterval) return
+    sub.lastFrameAt = now
+
+    const bytes =
+      data instanceof Uint8Array
+        ? data
+        : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+
+    const decoded = await decodeImageMessage(bytes, sub.schemaName)
+    if (!decoded?.blobUrl) return
+
+    const frame: DecodedCameraFrame = decoded
+    for (const cb of sub.callbacks) {
+      cb(sub.topic, frame)
+    }
+  }
+
+  private syncPointCloudSubscriptions(client: FoxgloveClient) {
+    for (const sub of this.pointCloudSubs.values()) {
+      if (sub.callbacks.size === 0) continue
+      const channel = this.channels.find((c) => c.topic === sub.topic)
+      if (!channel) continue
+      if (sub.subscriptionId != null) continue
+      sub.channelId = channel.id
+      sub.schemaName = channel.schemaName
+      sub.subscriptionId = client.subscribe(channel.id)
+      this.log({ level: 'info', message: `雷达已订阅 ${sub.topic}` })
+    }
+  }
+
+  private handlePointCloudMessage(sub: PointCloudSubscription, data: ArrayBuffer | ArrayBufferView) {
+    const bytes =
+      data instanceof Uint8Array
+        ? data
+        : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+
+    const cloud = decodePointCloud2(bytes)
+    if (!cloud) return
+
+    for (const cb of sub.callbacks) {
+      cb(sub.topic, cloud)
+    }
+  }
+
+  onLidarTopicsChanged(listener: TopicsListener) {
+    this.lidarTopicListeners.add(listener)
+    return () => this.lidarTopicListeners.delete(listener)
+  }
+
+  private rebuildLidarTopicCache(): boolean {
+    const next = this.channels
+      .filter((c) => isLidarPointCloudTopic(c.topic, c.schemaName))
+      .map((c) => c.topic)
+      .sort()
+
+    const prev = this.cachedLidarTopics
+    if (prev.length === next.length && prev.every((t, i) => t === next[i])) {
+      return false
+    }
+
+    this.cachedLidarTopics = next
+    return true
+  }
+
+  private notifyLidarTopicListeners() {
+    if (!this.rebuildLidarTopicCache()) return
+    for (const listener of this.lidarTopicListeners) {
+      listener()
+    }
+  }
+
+  getLidarTopics(): readonly string[] {
+    return this.cachedLidarTopics
+  }
+
+  subscribePointCloud(topic: string, callback: PointCloudFn): () => void {
+    let sub = this.pointCloudSubs.get(topic)
+    if (!sub) {
+      sub = {
+        topic,
+        channelId: null,
+        subscriptionId: null,
+        schemaName: 'sensor_msgs/msg/PointCloud2',
+        callbacks: new Set(),
+      }
+      this.pointCloudSubs.set(topic, sub)
+    }
+
+    sub.callbacks.add(callback)
+
+    if (this.client) {
+      const channel = this.channels.find((c) => c.topic === topic)
+      if (channel && sub.subscriptionId == null) {
+        sub.channelId = channel.id
+        sub.schemaName = channel.schemaName
+        sub.subscriptionId = this.client.subscribe(channel.id)
+        this.log({ level: 'info', message: `雷达已订阅 ${topic}` })
+      }
+    }
+
+    return () => {
+      const current = this.pointCloudSubs.get(topic)
+      if (!current) return
+      current.callbacks.delete(callback)
+      if (current.callbacks.size === 0) {
+        if (this.client && current.subscriptionId != null) {
+          this.client.unsubscribe(current.subscriptionId)
+        }
+        this.pointCloudSubs.delete(topic)
+      }
+    }
+  }
+
+  onTopicsChanged(listener: TopicsListener) {
+    this.topicListeners.add(listener)
+    return () => this.topicListeners.delete(listener)
+  }
+
+  private rebuildCameraTopicCache(): boolean {
+    const next = preferCompressedCameraTopics(
+      this.channels
+        .filter((c) => isCameraImageTopic(c.topic, c.schemaName))
+        .map((c) => c.topic),
+    )
+
+    const prev = this.cachedCameraTopics
+    if (prev.length === next.length && prev.every((t, i) => t === next[i])) {
+      return false
+    }
+
+    this.cachedCameraTopics = next
+    return true
+  }
+
+  private notifyTopicListeners() {
+    if (!this.rebuildCameraTopicCache()) return
+    for (const listener of this.topicListeners) {
+      listener()
+    }
+  }
+
+  /** 列出 Bridge 上所有 camera / image_raw 相关话题（稳定引用，供 useSyncExternalStore） */
+  getCameraImageTopics(): readonly string[] {
+    return this.cachedCameraTopics
+  }
+
+  getAllTopics(): string[] {
+    return this.channels.map((c) => c.topic).sort()
+  }
+
+  subscribeImage(topic: string, callback: ImageFrameFn): () => void {
+    let sub = this.imageSubs.get(topic)
+    if (!sub) {
+      sub = {
+        topic,
+        channelId: null,
+        subscriptionId: null,
+        schemaName: 'sensor_msgs/msg/Image',
+        callbacks: new Set(),
+        lastFrameAt: 0,
+      }
+      this.imageSubs.set(topic, sub)
+    }
+
+    sub.callbacks.add(callback)
+
+    if (this.client) {
+      const channel = this.channels.find((c) => c.topic === topic)
+      if (channel && sub.subscriptionId == null) {
+        sub.channelId = channel.id
+        sub.schemaName = channel.schemaName
+        sub.subscriptionId = this.client.subscribe(channel.id)
+        this.log({ level: 'info', message: `摄像头已订阅 ${topic}` })
+      }
+    }
+
+    return () => {
+      const current = this.imageSubs.get(topic)
+      if (!current) return
+      current.callbacks.delete(callback)
+      if (current.callbacks.size === 0) {
+        if (this.client && current.subscriptionId != null) {
+          this.client.unsubscribe(current.subscriptionId)
+        }
+        this.imageSubs.delete(topic)
+      }
+    }
+  }
+
   private cleanupSocket() {
     if (this.client) {
       try {
@@ -160,6 +437,15 @@ class FoxgloveBridgeManager {
     this.odomSubscriptionId = null
     this.odomChannelId = null
     this.clientPublishEnabled = false
+    this.channels = []
+    for (const sub of this.imageSubs.values()) {
+      sub.channelId = null
+      sub.subscriptionId = null
+    }
+    for (const sub of this.pointCloudSubs.values()) {
+      sub.channelId = null
+      sub.subscriptionId = null
+    }
   }
 
   /** 差速驱动控制器：advertise /cmd_vel */
@@ -204,6 +490,16 @@ class FoxgloveBridgeManager {
       if (this.odomSubscriptionId != null) {
         this.client.unsubscribe(this.odomSubscriptionId)
       }
+      for (const sub of this.imageSubs.values()) {
+        if (sub.subscriptionId != null) {
+          this.client.unsubscribe(sub.subscriptionId)
+        }
+      }
+      for (const sub of this.pointCloudSubs.values()) {
+        if (sub.subscriptionId != null) {
+          this.client.unsubscribe(sub.subscriptionId)
+        }
+      }
       if (this.cmdVelChannelId != null) {
         this.client.unadvertise(this.cmdVelChannelId)
       }
@@ -216,6 +512,17 @@ class FoxgloveBridgeManager {
     this.odomSubscriptionId = null
     this.odomChannelId = null
     this.clientPublishEnabled = false
+    this.channels = []
+    for (const sub of this.imageSubs.values()) {
+      sub.channelId = null
+      sub.subscriptionId = null
+    }
+    for (const sub of this.pointCloudSubs.values()) {
+      sub.channelId = null
+      sub.subscriptionId = null
+    }
+    this.notifyTopicListeners()
+    this.notifyLidarTopicListeners()
   }
 
   isConnected() {

@@ -8,11 +8,10 @@ import {
   expandedNodesAtom,
   projectAssetsAtom,
 } from './atoms'
-import { addAssetNodeToScene, addNodeToScene } from './actions'
+import { addAssetNodeToScene, addNodeToScene, removeNodeFromScene } from './actions'
 import { loadGltfSceneGraph } from './gltf-hierarchy'
 import type { CreateMenuAction } from './create-menu'
 import { isGltfFile } from './create-menu'
-import { ROBOT_ASSET_URL } from './types'
 import type { ProjectAsset } from './types'
 
 export function useAddSceneNode() {
@@ -98,14 +97,30 @@ export function useAddSceneNode() {
     [addAssetFromUrl, setProjectAssets],
   )
 
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      setNodes((prev) => {
+        const next = removeNodeFromScene(prev, nodeId)
+        return next ?? prev
+      })
+      setSelected((prev) => (prev === nodeId ? null : prev))
+      setExpanded((prev) => {
+        const next = new Set(prev)
+        next.delete(nodeId)
+        return next
+      })
+    },
+    [setNodes, setSelected, setExpanded],
+  )
+
   const handleCreateAction = useCallback(
-    (action: CreateMenuAction) => {
+    (action: CreateMenuAction, deleteTargetId?: string | null) => {
       if (action.kind === 'node') {
         addNode(action.type)
         return
       }
-      if (action.kind === 'load-robot') {
-        void addAssetFromUrl(ROBOT_ASSET_URL, 'RobotExpressive.glb', false)
+      if (action.kind === 'delete') {
+        if (deleteTargetId) deleteNode(deleteTargetId)
         return
       }
       if (action.kind === 'import-gltf') {
@@ -113,7 +128,7 @@ export function useAddSceneNode() {
         fileInputRef.current?.click()
       }
     },
-    [addNode, addAssetFromUrl],
+    [addNode, deleteNode],
   )
 
   const onFileInputChange = useCallback(
@@ -134,6 +149,7 @@ export function useAddSceneNode() {
     addNode,
     addAssetFromUrl,
     importGltfFile,
+    deleteNode,
     handleCreateAction,
   }
 }

@@ -7,7 +7,7 @@ import type { TransformMode } from '@/lib/scene/types'
 import { cn } from '@/lib/utils'
 
 const tools: { mode: TransformMode; icon: typeof Move; title: string }[] = [
-  { mode: 'select', icon: MousePointer2, title: '选择' },
+  { mode: 'select', icon: MousePointer2, title: '选择（显示移动 Gizmo）' },
   { mode: 'translate', icon: Move, title: '移动' },
   { mode: 'rotate', icon: RotateCw, title: '旋转' },
   { mode: 'scale', icon: Maximize2, title: '缩放' },

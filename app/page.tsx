@@ -17,6 +17,7 @@ import { ProjectBrowser } from '@/components/project-browser'
 import { uiPanelsAtom } from '@/lib/scene/atoms'
 import { PanelCollapseRail } from '@/components/panel-collapse-rail'
 import { CreateContextMenu } from '@/components/create-context-menu'
+import { I18nSync } from '@/components/i18n-sync'
 
 export default function WebSceneComposer() {
   const [uiPanels, setUiPanels] = useAtom(uiPanelsAtom)
@@ -54,6 +55,7 @@ export default function WebSceneComposer() {
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
+      <I18nSync />
       <CreateContextMenu />
       <TitleBar
         onToggleLeft={handleLeftToggle}

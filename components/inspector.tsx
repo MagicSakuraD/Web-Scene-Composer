@@ -112,6 +112,7 @@ export function Inspector() {
   }
 
   const isLight = node.type === 'distant-light' || node.type === 'point-light'
+  const isPhysicalLight = node.type === 'physical-distant-light'
   const isAsset = node.type === 'asset-ref'
   const isGltfPrim = node.type === 'gltf-prim'
   const showTransform =
@@ -152,14 +153,14 @@ export function Inspector() {
           </InspectorSection>
         )}
 
-        {isLight && (
+        {(isLight || isPhysicalLight) && (
           <InspectorSection title="Light Properties">
             <PropertyRow label="Intensity">
               <input
                 type="number"
                 step="0.1"
                 min="0"
-                value={node.lightIntensity ?? 1}
+                value={node.lightIntensity ?? (isPhysicalLight ? 1.15 : 1)}
                 onChange={(e) =>
                   setProps({
                     id: node.id,

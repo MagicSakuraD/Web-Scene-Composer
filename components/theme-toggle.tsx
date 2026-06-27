@@ -3,9 +3,11 @@
 import { Moon, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useEffect, useState } from 'react'
+import { useI18n } from '@/hooks/use-i18n'
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
+  const { t } = useI18n()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -21,13 +23,12 @@ export function ThemeToggle() {
       title={
         mounted
           ? isDark
-            ? '切换到浅色模式'
-            : '切换到深色模式'
-          : '切换主题'
+            ? t('theme.toggleLight')
+            : t('theme.toggleDark')
+          : t('theme.toggle')
       }
-      aria-label="切换主题"
+      aria-label={t('theme.toggle')}
     >
-      {/* Avoid hydration mismatch: render a stable icon until mounted */}
       {!mounted ? (
         <Sun className="h-4 w-4" />
       ) : isDark ? (

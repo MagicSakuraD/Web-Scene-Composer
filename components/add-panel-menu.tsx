@@ -7,9 +7,11 @@ import { Plus } from 'lucide-react'
 import {
   bottomPanelTabsAtom,
   activeBottomTabIdAtom,
-  ADDABLE_PANELS,
+  ADDABLE_PANEL_TYPES,
   type BottomPanelTabType,
 } from '@/lib/ros/atoms'
+import { useI18n } from '@/hooks/use-i18n'
+import { panelDescriptionKey, panelNameKey } from '@/lib/i18n/panel-messages'
 import { cn } from '@/lib/utils'
 
 export function AddPanelMenu() {
@@ -17,6 +19,7 @@ export function AddPanelMenu() {
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const [tabs, setTabs] = useAtom(bottomPanelTabsAtom)
   const setActive = useSetAtom(activeBottomTabIdAtom)
+  const { t } = useI18n()
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -42,9 +45,11 @@ export function AddPanelMenu() {
     return () => document.removeEventListener('mousedown', close)
   }, [open])
 
-  const addComponent = (type: BottomPanelTabType, name: string) => {
-    if (tabs.some((t) => t.type === type)) {
-      const existing = tabs.find((t) => t.type === type)
+  const addComponent = (type: BottomPanelTabType) => {
+    const nameKey = panelNameKey(type)
+    const name = nameKey ? t(nameKey) : type
+    if (tabs.some((tab) => tab.type === type)) {
+      const existing = tabs.find((tab) => tab.type === type)
       if (existing) setActive(existing.id)
       setOpen(false)
       return
@@ -64,18 +69,22 @@ export function AddPanelMenu() {
         style={{ top: menuPos.top, left: menuPos.left, transform: 'translateY(-100%)' }}
       >
         <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground border-b border-border mb-1">
-          添加组件
+          {t('panels.addComponent')}
         </div>
-        {ADDABLE_PANELS.map((panel) => {
-          const exists = tabs.some((t) => t.type === panel.type)
+        {ADDABLE_PANEL_TYPES.map((type) => {
+          const exists = tabs.some((tab) => tab.type === type)
+          const nameKey = panelNameKey(type)
+          const descKey = panelDescriptionKey(type)
           return (
             <button
-              key={panel.type}
+              key={type}
               className={cn('w-full text-left px-3 py-2 hover:bg-accent', exists && 'opacity-60')}
-              onClick={() => addComponent(panel.type, panel.name)}
+              onClick={() => addComponent(type)}
             >
-              <p className="text-sm">{panel.name}</p>
-              <p className="text-[10px] text-muted-foreground">{panel.description}</p>
+              <p className="text-sm">{nameKey ? t(nameKey) : type}</p>
+              {descKey && (
+                <p className="text-[10px] text-muted-foreground">{t(descKey)}</p>
+              )}
             </button>
           )
         })}
@@ -88,7 +97,7 @@ export function AddPanelMenu() {
       <button
         ref={buttonRef}
         className="p-1.5 rounded hover:bg-accent text-muted-foreground flex-shrink-0"
-        title="添加组件"
+        title={t('panels.addComponent')}
         onClick={() => setOpen(!open)}
       >
         <Plus className="h-4 w-4" />

@@ -5,21 +5,23 @@ import {
   Circle,
   Sun,
   Lightbulb,
-  Bot,
   FileBox,
+  Trash2,
 } from 'lucide-react'
 import type { NodeType } from './types'
 
 export type CreateMenuAction =
   | { kind: 'node'; type: NodeType }
   | { kind: 'import-gltf' }
-  | { kind: 'load-robot' }
+  | { kind: 'delete' }
 
 export interface CreateMenuItem {
   id: string
   label: string
   icon: LucideIcon
   action: CreateMenuAction
+  /** 无有效删除目标时禁用（如 Root） */
+  disabled?: boolean
 }
 
 export interface CreateMenuSection {
@@ -56,11 +58,21 @@ export const CREATE_MENU_SECTIONS: CreateMenuSection[] = [
     id: 'assets',
     label: 'Assets',
     items: [
-      { id: 'robot', label: 'Load Robot', icon: Bot, action: { kind: 'load-robot' } },
       { id: 'import', label: 'Import glTF / GLB…', icon: FileBox, action: { kind: 'import-gltf' } },
     ],
   },
 ]
+
+/** 右键菜单底部「删除」项（目标节点由 contextMenuAtom.nodeId 或当前选中决定） */
+export function buildDeleteMenuItem(nodeName: string | null, canDelete: boolean): CreateMenuItem {
+  return {
+    id: 'delete',
+    label: nodeName ? `Delete "${nodeName}"` : 'Delete',
+    icon: Trash2,
+    action: { kind: 'delete' },
+    disabled: !canDelete,
+  }
+}
 
 export const PROJECT_NAME = 'Web-Scene-Composer'
 

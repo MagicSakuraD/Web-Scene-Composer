@@ -5,6 +5,7 @@ export type NodeType =
   | 'sphere'
   | 'distant-light'
   | 'point-light'
+  | 'physical-distant-light'
   | 'asset-ref'
   | 'gltf-prim'
 
@@ -35,6 +36,8 @@ export interface SceneNode {
   parentId: string | null
   lightIntensity?: number
   lightColor?: string
+  /** 平行光照射目标（世界坐标） */
+  lightTarget?: [number, number, number]
   assetUrl?: string
   /** glTF internal prim — shown in hierarchy, rendered via parent asset-ref */
   gltfKind?: GltfPrimKind

@@ -31,6 +31,8 @@ export function getNodeIcon(node: Pick<SceneNode, 'type' | 'gltfKind'>) {
       return <Sun className="h-3.5 w-3.5 text-amber-400" />
     case 'point-light':
       return <Lightbulb className="h-3.5 w-3.5 text-yellow-300" />
+    case 'physical-distant-light':
+      return <Sun className="h-3.5 w-3.5 text-white" />
     case 'asset-ref':
       return <FileBox className="h-3.5 w-3.5 text-primary" />
     default:

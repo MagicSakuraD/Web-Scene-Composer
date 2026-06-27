@@ -12,7 +12,7 @@ export function ConsolePanel() {
   const assets = useAtomValue(projectAssetsAtom)
 
   return (
-    <div className="flex-1 overflow-auto p-3 font-mono text-xs text-muted-foreground space-y-1">
+    <div className="p-3 font-mono text-xs text-muted-foreground space-y-1">
       <p className="text-green-600 dark:text-green-400">[Ready] Web Scene Composer</p>
       <p>[Info] Simulate: {status}{error ? ` — ${error}` : ''}</p>
       <p>[Info] Imported assets: {assets.length}</p>

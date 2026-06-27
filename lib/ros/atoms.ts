@@ -42,7 +42,12 @@ export const gamepadConnectedAtom = atom(false)
 export const gamepadLabelAtom = atom<string | null>(null)
 export const cmdVelAdvertisedAtom = atom(false)
 
-export type BottomPanelTabType = 'project-browser' | 'console' | 'diff-drive'
+export type BottomPanelTabType =
+  | 'project-browser'
+  | 'console'
+  | 'diff-drive'
+  | 'camera-viewer'
+  | 'lidar-viewer'
 
 export interface BottomPanelTab {
   id: string
@@ -57,10 +62,49 @@ export const bottomPanelTabsAtom = atom<BottomPanelTab[]>([
 
 export const activeBottomTabIdAtom = atom<string>('project-browser')
 
-export const ADDABLE_PANELS: { type: BottomPanelTabType; name: string; description: string }[] = [
-  {
-    type: 'diff-drive',
-    name: '差速驱动控制器',
-    description: 'Xbox 手柄 · advertise & 发布 /cmd_vel',
-  },
-]
+/** 可添加的底部面板类型（文案见 lib/i18n/panel-messages.ts） */
+export { ADDABLE_PANEL_TYPES } from '@/lib/i18n/panel-messages'
+
+/** Nova Carter 默认压缩相机话题（image_transport） */
+export const DEFAULT_CAMERA_COMPRESSED_TOPICS = [
+  '/front_stereo_camera/left/image_raw/compressed',
+  '/front_stereo_camera/right/image_raw/compressed',
+] as const
+
+/** 摄像头面板当前选中的 ROS 图像话题 */
+export const cameraViewerTopicsAtom = atom<string[]>([])
+
+export const DEFAULT_LIDAR_TOPIC = '/front_3d_lidar/lidar_points'
+
+export type LidarColorMode = 'turbo' | 'solid'
+
+export interface LidarDisplayConfig {
+  /** 在 3D 视口显示点云 */
+  visible: boolean
+  topic: string
+  pointSize: number
+  color: string
+  opacity: number
+  sizeAttenuation: boolean
+  /** 挂载到 glTF 雷达节点 front_RPLidar（静态外参，不订 /tf） */
+  followRobot: boolean
+  /** turbo：GPU 高度渐变色；solid：单色 */
+  colorMode: LidarColorMode
+  /** 手动高度下界（null = 每帧自动） */
+  heightMin: number | null
+  /** 手动高度上界（null = 每帧自动） */
+  heightMax: number | null
+}
+
+export const lidarDisplayAtom = atom<LidarDisplayConfig>({
+  visible: true,
+  topic: DEFAULT_LIDAR_TOPIC,
+  pointSize: 0.04,
+  color: '#00ffcc',
+  opacity: 0.85,
+  sizeAttenuation: true,
+  followRobot: true,
+  colorMode: 'turbo',
+  heightMin: null,
+  heightMax: null,
+})

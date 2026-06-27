@@ -26,6 +26,7 @@ interface TreeItemProps {
 function TreeItem({ node, level, search }: TreeItemProps) {
   const [expanded, setExpanded] = useAtom(expandedNodesAtom)
   const [selectedId, setSelectedId] = useAtom(selectedNodeIdAtom)
+  const setContextMenu = useSetAtom(contextMenuAtom)
   const isExpanded = expanded.has(node.id)
   const hasChildren = node.children.length > 0
   const isSelected = selectedId === node.id
@@ -58,6 +59,10 @@ function TreeItem({ node, level, search }: TreeItemProps) {
         )}
         style={{ paddingLeft: `${level * 14 + 4}px` }}
         onClick={() => setSelectedId(node.id)}
+        onContextMenu={(e) => {
+          setSelectedId(node.id)
+          openCreateContextMenu(e, 'hierarchy', setContextMenu, node.id)
+        }}
       >
         {hasChildren ? (
           <button

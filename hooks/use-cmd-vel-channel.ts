@@ -6,7 +6,7 @@ import { simulateStatusAtom, simulateLogsAtom, cmdVelAdvertisedAtom } from '@/li
 import { foxgloveManager } from '@/lib/foxglove/client-manager'
 import { appendSimulateLog } from '@/lib/ros/simulate-actions'
 
-/** 差速驱动控制器挂载时 advertise /cmd_vel，卸载时取消 */
+/** 差速驱动 Tab 打开时 advertise /cmd_vel；Tab 关闭（叉号）时取消 */
 export function useCmdVelChannel(active: boolean) {
   const status = useAtomValue(simulateStatusAtom)
   const setLogs = useSetAtom(simulateLogsAtom)

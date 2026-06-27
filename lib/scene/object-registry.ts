@@ -81,21 +81,6 @@ export function clearAllHighlights() {
   }
 }
 
-export function applySelectionHighlight(nodeId: string | null, nodes: Record<string, { type: string }>) {
+export function applySelectionHighlight(_nodeId: string | null, _nodes: Record<string, { type: string }>) {
   clearAllHighlights()
-  if (!nodeId) return
-
-  const node = nodes[nodeId]
-  if (!node) return
-
-  const meshes = highlightMeshesByNodeId.get(nodeId)
-  if (meshes?.length) {
-    for (const mesh of meshes) applyMeshHighlight(mesh, true)
-    return
-  }
-
-  const obj = objectByNodeId.get(nodeId)
-  if (obj instanceof THREE.Mesh) {
-    applyMeshHighlight(obj, true)
-  }
 }

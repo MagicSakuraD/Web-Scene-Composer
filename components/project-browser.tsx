@@ -11,6 +11,8 @@ import {
   FileBox,
   Terminal,
   Gamepad2,
+  Camera,
+  Radar,
   X,
 } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -25,7 +27,13 @@ import { useAddSceneNode } from '@/lib/scene/use-add-scene-node'
 import { GltfFileInput } from '@/components/gltf-file-input'
 import { AddPanelMenu } from '@/components/add-panel-menu'
 import { DiffDrivePanel } from '@/components/panels/diff-drive-panel'
+import { DiffDriveRuntime } from '@/components/panels/diff-drive-runtime'
+import { CameraViewerPanel } from '@/components/panels/camera-viewer-panel'
+import { LidarViewerPanel } from '@/components/panels/lidar-viewer-panel'
+import { LidarRuntime } from '@/components/panels/lidar-runtime'
 import { ConsolePanel } from '@/components/panels/console-panel'
+import { useI18n } from '@/hooks/use-i18n'
+import { panelNameKey } from '@/lib/i18n/panel-messages'
 import { cn } from '@/lib/utils'
 
 function tabIcon(type: BottomPanelTab['type']) {
@@ -36,6 +44,10 @@ function tabIcon(type: BottomPanelTab['type']) {
       return Terminal
     case 'diff-drive':
       return Gamepad2
+    case 'camera-viewer':
+      return Camera
+    case 'lidar-viewer':
+      return Radar
     default:
       return FileBox
   }
@@ -49,12 +61,15 @@ interface ProjectBrowserProps {
 export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowserProps) {
   const [tabs, setTabs] = useAtom(bottomPanelTabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeBottomTabIdAtom)
+  const { t } = useI18n()
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const assets = useAtomValue(projectAssetsAtom)
   const { importGltfFile, addAssetFromUrl, fileInputRef, onFileInputChange } = useAddSceneNode()
   const importToLibraryOnly = useRef(false)
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
+  const hasDiffDriveTab = tabs.some((t) => t.type === 'diff-drive')
+  const hasLidarTab = tabs.some((t) => t.type === 'lidar-viewer')
 
   const triggerImport = (toScene: boolean) => {
     importToLibraryOnly.current = !toScene
@@ -78,6 +93,8 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
 
   return (
     <div className="h-full flex flex-col bg-sidebar">
+      {hasDiffDriveTab && <DiffDriveRuntime />}
+      {hasLidarTab && <LidarRuntime />}
       <GltfFileInput ref={fileInputRef} onChange={handleFileChange} />
 
       <div className="relative z-20 flex items-center border-b border-border bg-panel-header shrink-0">
@@ -85,6 +102,8 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
           {tabs.map((tab) => {
             const Icon = tabIcon(tab.type)
             const closable = tab.type !== 'project-browser'
+            const nameKey = panelNameKey(tab.type)
+            const label = nameKey ? t(nameKey) : tab.name
             return (
               <button
                 key={tab.id}
@@ -97,7 +116,7 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
                 onClick={() => setActiveTabId(tab.id)}
               >
                 <Icon className="h-3.5 w-3.5" />
-                {tab.name}
+                {label}
                 {closable && (
                   <span
                     className="ml-0.5 p-0.5 rounded hover:bg-background/80 opacity-0 group-hover:opacity-100"
@@ -120,27 +139,26 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
         </button>
       </div>
 
-      {!isCollapsed && activeTab?.type === 'project-browser' && (
-        <div className="relative z-0 flex-1 flex flex-col min-h-0 overflow-hidden">
-          <ProjectBrowserContent
-          assets={assets}
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          triggerImport={triggerImport}
-          onAssetActivate={(url, name) => void addAssetFromUrl(url, name, false)}
-        />
-        </div>
-      )}
-
-      {!isCollapsed && activeTab?.type === 'console' && (
-        <div className="relative z-0 flex-1 min-h-0 overflow-hidden">
-          <ConsolePanel />
-        </div>
-      )}
-
-      {!isCollapsed && activeTab?.type === 'diff-drive' && (
-        <div className="relative z-0 flex-1 min-h-0 overflow-hidden">
-          <DiffDrivePanel />
+      {!isCollapsed && activeTab && (
+        <div
+          className={cn(
+            'relative z-0 flex-1 min-h-0',
+            activeTab.type === 'camera-viewer' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto overflow-x-hidden',
+          )}
+        >
+          {activeTab.type === 'project-browser' && (
+            <ProjectBrowserContent
+              assets={assets}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              triggerImport={triggerImport}
+              onAssetActivate={(url, name) => void addAssetFromUrl(url, name, false)}
+            />
+          )}
+          {activeTab.type === 'console' && <ConsolePanel />}
+          {activeTab.type === 'diff-drive' && <DiffDrivePanel />}
+          {activeTab.type === 'camera-viewer' && <CameraViewerPanel />}
+          {activeTab.type === 'lidar-viewer' && <LidarViewerPanel />}
         </div>
       )}
     </div>

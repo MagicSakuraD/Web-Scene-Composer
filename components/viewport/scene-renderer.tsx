@@ -12,15 +12,19 @@ import {
   transformModeAtom,
 } from '@/lib/scene/atoms'
 import { tagGltfSceneNodeIds } from '@/lib/scene/gltf-hierarchy'
+import { enhanceGltfScene } from '@/lib/scene/enhance-gltf-scene'
+import type { SceneTreeNode } from '@/lib/scene/types'
 import {
   registerSceneObject,
   unregisterSceneObject,
   registerHighlightMeshes,
 } from '@/lib/scene/object-registry'
-import { ROBOT_ASSET_URL } from '@/lib/scene/types'
-import type { SceneTreeNode } from '@/lib/scene/types'
 import { TransformGizmo, transformsEqual } from './transform-gizmo'
-import { SelectionHighlight } from './selection-highlight'
+import { RuntimeRobotSync } from './runtime-robot-sync'
+import { LidarPointCloud } from './lidar-point-cloud'
+import { ViewportSceneHelpers } from './viewport-scene-helpers'
+import { PhysicalDistantLightNode } from './physical-distant-light-node'
+import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
 
 const nodeRefs = new Map<string, THREE.Object3D>()
 
@@ -37,6 +41,7 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
   const clone = useMemo(() => {
     const c = scene.clone(true)
     tagGltfSceneNodeIds(c, assetRootId)
+    enhanceGltfScene(c)
     return c
   }, [scene, assetRootId])
 
@@ -47,7 +52,6 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
         registerHighlightMeshes(obj.userData.sceneNodeId, obj)
       }
     })
-    registerSceneObject(assetRootId, clone)
     registerHighlightMeshes(assetRootId, clone)
 
     return () => {
@@ -56,7 +60,6 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
           unregisterSceneObject(obj.userData.sceneNodeId)
         }
       })
-      unregisterSceneObject(assetRootId)
     }
   }, [clone, assetRootId])
 
@@ -91,6 +94,11 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
     const obj = groupRef.current
     if (!obj) return
 
+    // Simulate 运行时由 RuntimeRobotSync 写 Three.js（asset-ref 或 gltf 底盘根节点）
+    if (runtimePoseStore.active && runtimePoseStore.robotNodeId === node.id) {
+      return
+    }
+
     if (
       transformsEqual(obj, node.transform.position, node.transform.rotation, node.transform.scale)
     ) {
@@ -100,7 +108,7 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
     obj.position.set(...node.transform.position)
     obj.rotation.set(rx, ry, rz)
     obj.scale.set(...node.transform.scale)
-  }, [node.transform, rx, ry, rz])
+  }, [node.id, node.type, node.transform, rx, ry, rz])
 
   const renderContent = () => {
     switch (node.type) {
@@ -150,6 +158,8 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
             </mesh>
           </group>
         )
+      case 'physical-distant-light':
+        return <PhysicalDistantLightNode node={node} />
       case 'asset-ref':
         return node.assetUrl ? (
           <Suspense fallback={null}>
@@ -175,7 +185,6 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
 function SelectedGizmo() {
   const selectedId = useAtomValue(selectedNodeIdAtom)
   const selectedNode = useAtomValue(selectedNodeAtom)
-  const transformMode = useAtomValue(transformModeAtom)
   useAtomValue(selectedObjectReadyAtom)
 
   const object = selectedId ? nodeRefs.get(selectedId) : undefined
@@ -184,7 +193,6 @@ function SelectedGizmo() {
   if (selectedNode.type === 'group' || selectedNode.type === 'ground' || selectedNode.type === 'gltf-prim') {
     return null
   }
-  if (transformMode === 'select') return null
 
   return <TransformGizmo object={object} nodeId={selectedId} />
 }
@@ -194,9 +202,10 @@ export function SceneRenderer() {
 
   return (
     <>
-      <color attach="background" args={['#6b6b6b']} />
-      <ambientLight intensity={0.35} />
-      <SelectionHighlight />
+      <color attach="background" args={['#1c1e24']} />
+      <ViewportSceneHelpers />
+      <RuntimeRobotSync />
+      <LidarPointCloud />
       {tree.map((node) => (
         <SceneNodeObject key={node.id} node={node} />
       ))}
@@ -204,5 +213,3 @@ export function SceneRenderer() {
     </>
   )
 }
-
-useGLTF.preload(ROBOT_ASSET_URL)
