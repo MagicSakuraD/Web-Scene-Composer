@@ -103,6 +103,11 @@ const zh = {
   'inspector.path': '路径',
   'inspector.gltfPrimTransformHint':
     '来自 glTF 的本地变换。移动整个模型请编辑父级 asset-ref。',
+  'sceneHierarchy.title': '场景',
+  'sceneHierarchy.empty':
+    'Root 下暂无 prim。右键可创建物体，或导入 .glb 以展开其内部层级。',
+  'sceneHierarchy.filterPlaceholder': '筛选 prim',
+  'sceneHierarchy.create': '创建',
 } as const
 
 const en: Record<keyof typeof zh, string> = {
@@ -202,6 +207,11 @@ const en: Record<keyof typeof zh, string> = {
   'inspector.path': 'Path',
   'inspector.gltfPrimTransformHint':
     'Local transform from glTF. Edit the parent asset-ref to move the whole model.',
+  'sceneHierarchy.title': 'Scene',
+  'sceneHierarchy.empty':
+    'No prims under Root. Right-click to Create, or import a .glb to expand its internal hierarchy.',
+  'sceneHierarchy.filterPlaceholder': 'Filter prims',
+  'sceneHierarchy.create': 'Create',
 }
 
 export type MessageKey = keyof typeof zh

@@ -15,6 +15,7 @@ import type { SceneTreeNode } from '@/lib/scene/types'
 import { getNodeIcon, getGltfKindLabel } from '@/lib/scene/node-icons'
 import { AddObjectMenu } from '@/components/add-object-menu'
 import { openCreateContextMenu } from '@/components/create-context-menu'
+import { useI18n } from '@/hooks/use-i18n'
 import { cn } from '@/lib/utils'
 
 interface TreeItemProps {
@@ -109,6 +110,7 @@ function TreeItem({ node, level, search }: TreeItemProps) {
 }
 
 export function SceneHierarchy() {
+  const { t } = useI18n()
   const tree = useAtomValue(composedStageAtom)
   const nodes = useAtomValue(sceneNodesAtom)
   const selectedId = useAtomValue(selectedNodeIdAtom)
@@ -137,7 +139,7 @@ export function SceneHierarchy() {
     <div className="h-full flex flex-col bg-sidebar flex-1 min-w-0">
       <div className="px-3 py-2 border-b border-border flex items-center justify-between">
         <div className="inline-flex items-center px-3 py-1 bg-selection-accent/15 rounded text-xs font-medium text-selection-accent">
-          Scene
+          {t('sceneHierarchy.title')}
         </div>
       </div>
 
@@ -150,7 +152,7 @@ export function SceneHierarchy() {
         ))}
         {isEmpty && (
           <p className="px-3 py-2 text-[10px] text-muted-foreground/80 leading-relaxed">
-            No prims under Root. Right-click to Create, or import a .glb to expand its internal hierarchy.
+            {t('sceneHierarchy.empty')}
           </p>
         )}
       </div>
@@ -160,7 +162,7 @@ export function SceneHierarchy() {
           <Search className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
           <input
             type="text"
-            placeholder="Filter prims"
+            placeholder={t('sceneHierarchy.filterPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
@@ -169,7 +171,7 @@ export function SceneHierarchy() {
         <AddObjectMenu>
           <button
             className="p-1.5 rounded hover:bg-accent text-muted-foreground"
-            title="Create"
+            title={t('sceneHierarchy.create')}
           >
             <Plus className="h-4 w-4" />
           </button>
