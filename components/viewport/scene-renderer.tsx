@@ -18,13 +18,16 @@ import {
   registerSceneObject,
   unregisterSceneObject,
   registerHighlightMeshes,
+  objectByNodeId,
 } from '@/lib/scene/object-registry'
 import { TransformGizmo, transformsEqual } from './transform-gizmo'
 import { RuntimeRobotSync } from './runtime-robot-sync'
 import { LidarPointCloud } from './lidar-point-cloud'
+import { MaterialGraphSync } from './material-graph-sync'
 import { ViewportSceneHelpers } from './viewport-scene-helpers'
 import { PhysicalDistantLightNode } from './physical-distant-light-node'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
+import { VIEWPORT_WEBGPU_FEATURES } from '@/lib/viewport/visual-config'
 
 const nodeRefs = new Map<string, THREE.Object3D>()
 
@@ -182,15 +185,36 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
   )
 }
 
+function SelectionObjectReady() {
+  const selectedId = useAtomValue(selectedNodeIdAtom)
+  const bumpObjectReady = useSetAtom(selectedObjectReadyAtom)
+
+  useEffect(() => {
+    if (!selectedId) return
+    if (objectByNodeId.has(selectedId)) {
+      bumpObjectReady((n) => n + 1)
+      return
+    }
+    const frame = requestAnimationFrame(() => {
+      if (objectByNodeId.has(selectedId)) bumpObjectReady((n) => n + 1)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [selectedId, bumpObjectReady])
+
+  return null
+}
+
 function SelectedGizmo() {
   const selectedId = useAtomValue(selectedNodeIdAtom)
   const selectedNode = useAtomValue(selectedNodeAtom)
   useAtomValue(selectedObjectReadyAtom)
 
-  const object = selectedId ? nodeRefs.get(selectedId) : undefined
+  const object = selectedId
+    ? (objectByNodeId.get(selectedId) ?? nodeRefs.get(selectedId))
+    : undefined
 
   if (!selectedId || !selectedNode || !object) return null
-  if (selectedNode.type === 'group' || selectedNode.type === 'ground' || selectedNode.type === 'gltf-prim') {
+  if (selectedNode.type === 'group' || selectedNode.type === 'ground') {
     return null
   }
 
@@ -205,10 +229,12 @@ export function SceneRenderer() {
       <color attach="background" args={['#1c1e24']} />
       <ViewportSceneHelpers />
       <RuntimeRobotSync />
-      <LidarPointCloud />
+      {VIEWPORT_WEBGPU_FEATURES.lidarPointCloud ? <LidarPointCloud /> : null}
+      {VIEWPORT_WEBGPU_FEATURES.materialGraph ? <MaterialGraphSync /> : null}
       {tree.map((node) => (
         <SceneNodeObject key={node.id} node={node} />
       ))}
+      <SelectionObjectReady />
       <SelectedGizmo />
     </>
   )

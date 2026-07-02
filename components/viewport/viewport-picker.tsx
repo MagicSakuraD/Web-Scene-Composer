@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
 import { useSetAtom } from 'jotai'
 import * as THREE from 'three'
-import { selectedNodeIdAtom } from '@/lib/scene/atoms'
+import { selectedNodeIdAtom, selectedObjectReadyAtom } from '@/lib/scene/atoms'
 import { resolvePickedNodeId } from '@/lib/scene/object-registry'
 import { shouldSkipViewportPick } from '@/lib/viewport/transform-gizmo-state'
 
@@ -17,6 +17,7 @@ const _raycaster = new THREE.Raycaster()
 export function ViewportPicker() {
   const { camera, scene, gl } = useThree()
   const setSelected = useSetAtom(selectedNodeIdAtom)
+  const bumpObjectReady = useSetAtom(selectedObjectReadyAtom)
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export function ViewportPicker() {
         const nodeId = resolvePickedNodeId(hit.object)
         if (nodeId) {
           setSelected(nodeId)
+          bumpObjectReady((n) => n + 1)
           return
         }
       }
@@ -66,7 +68,7 @@ export function ViewportPicker() {
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointerup', onPointerUp)
     }
-  }, [camera, scene, gl, setSelected])
+  }, [camera, scene, gl, setSelected, bumpObjectReady])
 
   return null
 }

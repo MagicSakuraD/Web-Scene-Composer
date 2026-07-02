@@ -13,6 +13,7 @@ import {
   Gamepad2,
   Camera,
   Radar,
+  Layers,
   X,
 } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -30,6 +31,7 @@ import { DiffDrivePanel } from '@/components/panels/diff-drive-panel'
 import { DiffDriveRuntime } from '@/components/panels/diff-drive-runtime'
 import { CameraViewerPanel } from '@/components/panels/camera-viewer-panel'
 import { LidarViewerPanel } from '@/components/panels/lidar-viewer-panel'
+import { MaterialGraphPanel } from '@/components/panels/material-graph-panel'
 import { LidarRuntime } from '@/components/panels/lidar-runtime'
 import { ConsolePanel } from '@/components/panels/console-panel'
 import { useI18n } from '@/hooks/use-i18n'
@@ -48,6 +50,8 @@ function tabIcon(type: BottomPanelTab['type']) {
       return Camera
     case 'lidar-viewer':
       return Radar
+    case 'material-graph':
+      return Layers
     default:
       return FileBox
   }
@@ -133,7 +137,7 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
         <button
           className="p-2 hover:bg-accent text-muted-foreground shrink-0"
           onClick={onToggleCollapse}
-          title={isCollapsed ? '展开面板' : '折叠面板'}
+          title={isCollapsed ? t('projectBrowser.expandPanel') : t('projectBrowser.collapsePanel')}
         >
           {isCollapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
@@ -143,7 +147,9 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
         <div
           className={cn(
             'relative z-0 flex-1 min-h-0',
-            activeTab.type === 'camera-viewer' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto overflow-x-hidden',
+            activeTab.type === 'camera-viewer' || activeTab.type === 'material-graph'
+              ? 'overflow-hidden flex flex-col'
+              : 'overflow-y-auto overflow-x-hidden',
           )}
         >
           {activeTab.type === 'project-browser' && (
@@ -159,6 +165,7 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
           {activeTab.type === 'diff-drive' && <DiffDrivePanel />}
           {activeTab.type === 'camera-viewer' && <CameraViewerPanel />}
           {activeTab.type === 'lidar-viewer' && <LidarViewerPanel />}
+          {activeTab.type === 'material-graph' && <MaterialGraphPanel />}
         </div>
       )}
     </div>
@@ -178,16 +185,18 @@ function ProjectBrowserContent({
   triggerImport: (toScene: boolean) => void
   onAssetActivate: (url: string, name: string) => void
 }) {
+  const { t } = useI18n()
+
   return (
     <div className="flex-1 flex overflow-hidden">
       <div className="w-44 border-r border-border flex flex-col">
         <div className="border-b border-border px-2 py-1.5">
-          <span className="text-xs font-medium text-muted-foreground">Assets</span>
+          <span className="text-xs font-medium text-muted-foreground">{t('projectBrowser.assets')}</span>
         </div>
         <div className="flex-1 overflow-auto px-1 py-2">
           <div className="flex items-center gap-1 py-0.5 px-2 bg-selection-accent/15 rounded text-xs text-selection-accent">
             <LayoutGrid className="h-3 w-3" />
-            glTF / GLB
+            {t('projectBrowser.gltfFormat')}
           </div>
         </div>
       </div>
@@ -196,14 +205,14 @@ function ProjectBrowserContent({
         <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border bg-panel-header">
           <button
             className="p-1 rounded hover:bg-accent text-muted-foreground"
-            title="Import glTF / GLB"
+            title={t('projectBrowser.importGltf')}
             onClick={() => triggerImport(false)}
           >
             <Plus className="h-4 w-4" />
           </button>
           <div className="flex-1 flex items-center gap-1.5 px-2 py-1 rounded bg-input border border-border max-w-xs">
             <Search className="h-3.5 w-3.5 text-muted-foreground" />
-            <input type="text" placeholder="Search" className="flex-1 bg-transparent text-xs outline-none" />
+            <input type="text" placeholder={t('projectBrowser.search')} className="flex-1 bg-transparent text-xs outline-none" />
           </div>
           <div className="flex items-center gap-0.5">
             <button
@@ -228,12 +237,12 @@ function ProjectBrowserContent({
         {assets.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6 text-center">
             <FileBox className="h-10 w-10 text-muted-foreground/50" />
-            <p className="text-sm text-muted-foreground">No assets imported yet</p>
+            <p className="text-sm text-muted-foreground">{t('projectBrowser.noAssets')}</p>
             <button
               className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs hover:opacity-90"
               onClick={() => triggerImport(false)}
             >
-              Import glTF / GLB
+              {t('projectBrowser.importGltf')}
             </button>
           </div>
         ) : viewMode === 'list' ? (
@@ -242,8 +251,8 @@ function ProjectBrowserContent({
               <thead className="sticky top-0 bg-panel-header border-b border-border">
                 <tr className="text-left text-muted-foreground">
                   <th className="px-3 py-1.5 font-medium w-8" />
-                  <th className="px-3 py-1.5 font-medium">Name</th>
-                  <th className="px-3 py-1.5 font-medium w-24">Format</th>
+                  <th className="px-3 py-1.5 font-medium">{t('projectBrowser.name')}</th>
+                  <th className="px-3 py-1.5 font-medium w-24">{t('projectBrowser.format')}</th>
                 </tr>
               </thead>
               <tbody>

@@ -1,4 +1,5 @@
 import { atom } from 'jotai'
+import { VIEWPORT_WEBGPU_FEATURES } from '@/lib/viewport/visual-config'
 
 export type SimulateStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
@@ -48,6 +49,7 @@ export type BottomPanelTabType =
   | 'diff-drive'
   | 'camera-viewer'
   | 'lidar-viewer'
+  | 'material-graph'
 
 export interface BottomPanelTab {
   id: string
@@ -55,10 +57,15 @@ export interface BottomPanelTab {
   name: string
 }
 
-export const bottomPanelTabsAtom = atom<BottomPanelTab[]>([
+const DEFAULT_BOTTOM_PANEL_TABS: BottomPanelTab[] = [
   { id: 'project-browser', type: 'project-browser', name: 'Project Browser' },
   { id: 'console', type: 'console', name: 'Console' },
-])
+  ...(VIEWPORT_WEBGPU_FEATURES.materialGraph
+    ? [{ id: 'material-graph', type: 'material-graph' as const, name: 'Material Graph' }]
+    : []),
+]
+
+export const bottomPanelTabsAtom = atom<BottomPanelTab[]>(DEFAULT_BOTTOM_PANEL_TABS)
 
 export const activeBottomTabIdAtom = atom<string>('project-browser')
 

@@ -4,7 +4,7 @@ import { Suspense } from 'react'
 import { Environment } from '@react-three/drei'
 import { useAtomValue } from 'jotai'
 import { viewportDefaultLightsVisibleAtom } from '@/lib/viewport/atoms'
-import { ROOM_IBL_CONFIG } from '@/lib/viewport/visual-config'
+import { ROOM_IBL_CONFIG, VIEWPORT_WEBGPU_FEATURES } from '@/lib/viewport/visual-config'
 
 /**
  * Sun 按钮开启：drei Environment IBL（HDRI + PMREM）。
@@ -12,7 +12,7 @@ import { ROOM_IBL_CONFIG } from '@/lib/viewport/visual-config'
  */
 export function ViewportEffects() {
   const enabled = useAtomValue(viewportDefaultLightsVisibleAtom)
-  if (!enabled) return null
+  if (!enabled || !VIEWPORT_WEBGPU_FEATURES.environmentIbl) return null
 
   return (
     <Suspense fallback={null}>

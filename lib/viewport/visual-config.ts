@@ -139,7 +139,22 @@ export const VISUAL_QUALITY_PRESETS: Record<ViewportRenderQuality, VisualQuality
 export const CANVAS_GL_CONFIG = {
   antialias: true,
   toneMappingExposure: 0.95,
+  /** false = 优先 WebGPU；不支持时 Three 自动降级 WebGL */
+  forceWebGL: false,
 } as const
+
+/** WebGPU 功能开关 */
+export const VIEWPORT_WEBGPU_FEATURES = {
+  /** TSL + THREE.Points（WebGPU 固定 1px 点径） */
+  lidarPointCloud: true,
+  /** TSL 材质节点图面板 */
+  materialGraph: true,
+  /** drei Environment IBL（PMREM）；若异常可关 */
+  environmentIbl: true,
+} as const
+
+/** WebGPU 下点云为规范限制的 1 物理像素；面板 pointSize 暂不影响渲染 */
+export const LIDAR_WEBGPU_FIXED_POINT_PX = 1 as const
 
 // ─── Sun 按钮 · IBL 环境光调参（改这里）────────────────────────────────────
 // 使用方：viewport-effects.tsx → <Environment preset={...} />
@@ -160,10 +175,10 @@ export type DreiEnvironmentPreset =
 
 export const ROOM_IBL_CONFIG = {
   /** studio≈产品棚拍；仓库场景可改 warehouse */
-  preset: 'studio' satisfies DreiEnvironmentPreset as DreiEnvironmentPreset,
+  preset: 'sunset' satisfies DreiEnvironmentPreset as DreiEnvironmentPreset,
   background: false,
-  environmentIntensity: 1,
-  toneMappingExposure: 1,
+  environmentIntensity: 0.8,
+  toneMappingExposure: 0.8,
 } as const
 
 // ─── 旧方案：Physical Lights / Reinhard（暂不用，保留参考）──────────────────

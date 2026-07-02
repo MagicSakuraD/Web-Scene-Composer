@@ -10,6 +10,7 @@ import {
 } from '@/lib/scene/atoms'
 import { getNodeIcon } from '@/lib/scene/node-icons'
 import type { Transform } from '@/lib/scene/types'
+import { useI18n } from '@/hooks/use-i18n'
 
 interface InspectorSectionProps {
   title: string
@@ -80,6 +81,7 @@ function VectorInput({ values, onChange, defaultValue = 0 }: VectorInputProps) {
 }
 
 export function Inspector() {
+  const { t } = useI18n()
   const node = useAtomValue(selectedNodeAtom)
   const setTransform = useSetAtom(updateNodeTransformAtom)
   const setProps = useSetAtom(updateNodePropsAtom)
@@ -100,11 +102,11 @@ export function Inspector() {
     return (
       <div className="h-full flex flex-col bg-sidebar flex-1 min-w-0">
         <div className="px-3 py-2 border-b border-border">
-          <span className="text-sm font-medium text-muted-foreground">Inspector</span>
+          <span className="text-sm font-medium text-muted-foreground">{t('inspector.title')}</span>
         </div>
         <div className="flex-1 flex items-center justify-center p-4">
           <p className="text-xs text-muted-foreground text-center">
-            Select an object to inspect its properties.
+            {t('inspector.noSelection')}
           </p>
         </div>
       </div>
@@ -130,20 +132,20 @@ export function Inspector() {
 
       <div className="flex-1 overflow-auto">
         {showTransform && (
-          <InspectorSection title="Transform">
-            <PropertyRow label="Position">
+          <InspectorSection title={t('inspector.transform')}>
+            <PropertyRow label={t('inspector.position')}>
               <VectorInput
                 values={node.transform.position}
                 onChange={(axis, v) => updateAxis('position', axis, v)}
               />
             </PropertyRow>
-            <PropertyRow label="Rotation">
+            <PropertyRow label={t('inspector.rotation')}>
               <VectorInput
                 values={node.transform.rotation}
                 onChange={(axis, v) => updateAxis('rotation', axis, v)}
               />
             </PropertyRow>
-            <PropertyRow label="Scale">
+            <PropertyRow label={t('inspector.scale')}>
               <VectorInput
                 values={node.transform.scale}
                 onChange={(axis, v) => updateAxis('scale', axis, v)}
@@ -154,8 +156,8 @@ export function Inspector() {
         )}
 
         {(isLight || isPhysicalLight) && (
-          <InspectorSection title="Light Properties">
-            <PropertyRow label="Intensity">
+          <InspectorSection title={t('inspector.lightProperties')}>
+            <PropertyRow label={t('inspector.intensity')}>
               <input
                 type="number"
                 step="0.1"
@@ -170,7 +172,7 @@ export function Inspector() {
                 className="w-full bg-input border border-border rounded px-2 py-1 text-xs"
               />
             </PropertyRow>
-            <PropertyRow label="Color">
+            <PropertyRow label={t('inspector.color')}>
               <input
                 type="color"
                 value={node.lightColor ?? '#ffffff'}
@@ -184,51 +186,51 @@ export function Inspector() {
         )}
 
         {isAsset && (
-          <InspectorSection title="Asset Reference">
-            <PropertyRow label="Format">
-              <span className="text-xs text-muted-foreground">glTF / GLB</span>
+          <InspectorSection title={t('inspector.assetReference')}>
+            <PropertyRow label={t('inspector.format')}>
+              <span className="text-xs text-muted-foreground">{t('projectBrowser.gltfFormat')}</span>
             </PropertyRow>
-            <PropertyRow label="URL">
+            <PropertyRow label={t('inspector.url')}>
               <span className="text-xs text-muted-foreground truncate block" title={node.assetUrl}>
-                {node.assetUrl ?? 'None'}
+                {node.assetUrl ?? t('inspector.none')}
               </span>
             </PropertyRow>
             <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
-              Internal mesh/group hierarchy is expanded in the Scene outliner (gltfjsx-style graph).
+              {t('inspector.assetHierarchyHint')}
             </p>
           </InspectorSection>
         )}
 
         {isGltfPrim && (
           <>
-            <InspectorSection title="Prim">
-              <PropertyRow label="Kind">
+            <InspectorSection title={t('inspector.prim')}>
+              <PropertyRow label={t('inspector.kind')}>
                 <span className="text-xs font-medium">{node.gltfKind}</span>
               </PropertyRow>
-              <PropertyRow label="Path">
+              <PropertyRow label={t('inspector.path')}>
                 <span className="text-xs text-muted-foreground font-mono truncate block" title={node.gltfPath}>
                   /{node.gltfPath}
                 </span>
               </PropertyRow>
             </InspectorSection>
-            <InspectorSection title="Transform" defaultExpanded={false}>
-              <PropertyRow label="Position">
+            <InspectorSection title={t('inspector.transform')} defaultExpanded={false}>
+              <PropertyRow label={t('inspector.position')}>
                 <span className="text-xs text-muted-foreground font-mono">
                   {node.transform.position.map((v) => v.toFixed(2)).join(', ')}
                 </span>
               </PropertyRow>
-              <PropertyRow label="Rotation">
+              <PropertyRow label={t('inspector.rotation')}>
                 <span className="text-xs text-muted-foreground font-mono">
                   {node.transform.rotation.map((v) => v.toFixed(2)).join(', ')}
                 </span>
               </PropertyRow>
-              <PropertyRow label="Scale">
+              <PropertyRow label={t('inspector.scale')}>
                 <span className="text-xs text-muted-foreground font-mono">
                   {node.transform.scale.map((v) => v.toFixed(2)).join(', ')}
                 </span>
               </PropertyRow>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Local transform from glTF. Edit the parent asset-ref to move the whole model.
+                {t('inspector.gltfPrimTransformHint')}
               </p>
             </InspectorSection>
           </>

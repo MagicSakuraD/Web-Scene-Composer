@@ -12,6 +12,7 @@ import {
 import { useAtom, useAtomValue } from 'jotai'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { LocaleToggle } from '@/components/locale-toggle'
+import { InteractionHelpButton } from '@/components/interaction-help'
 import { AddObjectMenu } from '@/components/add-object-menu'
 import { breadcrumbAtom } from '@/lib/scene/atoms'
 import { FOXGLOVE_WS_URL } from '@/lib/ros/atoms'
@@ -149,6 +150,7 @@ export function TitleBar({
         </button>
         <div className="w-px h-5 bg-border mx-1" />
         <AddObjectMenu />
+        <InteractionHelpButton />
         <LocaleToggle />
         <ThemeToggle />
         <button

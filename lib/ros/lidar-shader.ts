@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 
+/** @deprecated WebGPU 路径请改用 lib/ros/lidar-tsl-material.ts（TSL + Instanced Sprite） */
+
 /** Google Turbo colormap — 顶点着色器内多项式拟合，零 CPU 逐点设色 */
 const LIDAR_VERTEX_SHADER = /* glsl */ `
 uniform float uPointSize;

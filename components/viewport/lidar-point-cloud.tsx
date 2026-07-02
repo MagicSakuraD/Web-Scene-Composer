@@ -10,7 +10,11 @@ import {
   LIDAR_POSITION_BUFFER,
   lidarPointStore,
 } from '@/lib/ros/lidar-point-store'
-import { createLidarShaderMaterial, type LidarShaderMaterial } from '@/lib/ros/lidar-shader'
+import {
+  createLidarTslMaterial,
+  setLidarSolidColor,
+  type LidarTslUniforms,
+} from '@/lib/ros/lidar-tsl-material'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
 import { objectByNodeId } from '@/lib/scene/object-registry'
 import { resolveRobotAnimRoot } from '@/lib/ros/caster-swivel'
@@ -19,14 +23,12 @@ import { findLidarMountNode } from '@/lib/ros/resolve-lidar-mount'
 /**
  * 在 rosPointsToThreeBuffer 之后，对点云局部坐标再绕 X 轴旋转（弧度）。
  * +Math.PI/2 = 绕 X 轴 +90°；-Math.PI/2 = -90°；0 = 不额外旋转。
- * 调这个值修正「竖拱门」；改完保存刷新即可。
  */
 const LIDAR_EXTRA_ROTATION_X = Math.PI / 2
 
 /**
- * Nova Carter 3D 雷达点云
- * - 坐标：rosPointsToThreeBuffer（Isaac Z-up → Three Y-up）
- * - 设色：Turbo Shader 按 height(Y) 在 GPU 内算色，无 CPU 逐点设色
+ * Nova Carter 3D 雷达点云（WebGPU / TSL）
+ * - WebGPU 下 THREE.Points 固定 1px；Turbo 渐变色由 TSL 在 GPU 计算
  * - 外参：attach 到 glTF front_RPLidar
  */
 export function LidarPointCloud() {
@@ -37,26 +39,16 @@ export function LidarPointCloud() {
   const cloudGroupRef = useRef<THREE.Group>(null)
   const attachedMountRef = useRef<THREE.Object3D | null>(null)
   const lastGenerationRef = useRef(0)
+  const solidColorScratch = useMemo(() => new THREE.Color(), [])
 
-  const material = useMemo(() => createLidarShaderMaterial(), [])
+  const { material, uniforms } = useMemo(() => createLidarTslMaterial(), [])
 
   const simActive = status === 'connected'
 
   useFrame(() => {
     if (!config.visible || !simActive) return
 
-    const mat = material as LidarShaderMaterial
-    mat.uniforms.uPointSize.value = config.pointSize
-    mat.uniforms.uOpacity.value = config.opacity
-    mat.uniforms.uSizeAttenuation.value = config.sizeAttenuation ? 1 : 0
-    mat.uniforms.uUseGradient.value = config.colorMode === 'turbo' ? 1 : 0
-    mat.uniforms.uSolidColor.value.set(config.color)
-    mat.uniforms.uEmissiveBoost.value = 1
-
-    const minY = config.heightMin ?? lidarPointStore.heightMin
-    const maxY = config.heightMax ?? lidarPointStore.heightMax
-    mat.uniforms.uMinY.value = minY
-    mat.uniforms.uMaxY.value = maxY
+    updateLidarUniforms(uniforms, config, solidColorScratch)
 
     const gen = lidarPointStore.generation
     if (gen !== lastGenerationRef.current && geometryRef.current && lidarPointStore.pointCount > 0) {
@@ -69,9 +61,8 @@ export function LidarPointCloud() {
       geo.setDrawRange(0, lidarPointStore.pointCount)
     }
 
-    const points = pointsRef.current
     const cloudGroup = cloudGroupRef.current
-    if (!points || !cloudGroup || !config.followRobot) return
+    if (!cloudGroup || !config.followRobot) return
 
     const targetId = runtimePoseStore.robotNodeId
     if (!targetId) return
@@ -106,4 +97,26 @@ export function LidarPointCloud() {
       </points>
     </group>
   )
+}
+
+function updateLidarUniforms(
+  uniforms: LidarTslUniforms,
+  config: {
+    opacity: number
+    colorMode: string
+    color: string
+    heightMin: number | null
+    heightMax: number | null
+  },
+  solidScratch: THREE.Color,
+) {
+  uniforms.uOpacity.value = config.opacity
+  uniforms.uUseGradient.value = config.colorMode === 'turbo' ? 1 : 0
+  setLidarSolidColor(uniforms, config.color, solidScratch)
+
+  const minY = config.heightMin ?? lidarPointStore.heightMin
+  const maxY = config.heightMax ?? lidarPointStore.heightMax
+  uniforms.uMinY.value = minY
+  uniforms.uMaxY.value = maxY
+  uniforms.uEmissiveBoost.value = 1
 }
