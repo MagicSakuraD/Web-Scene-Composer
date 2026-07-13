@@ -4,6 +4,8 @@ import type { TransformControls as TransformControlsImpl } from 'three-stdlib'
 export const transformGizmoState = {
   controls: null as TransformControlsImpl | null,
   dragging: false,
+  /** Gizmo 拖拽中的 sceneNodeId，用于跳过 atom → Three.js 回写 */
+  draggingNodeId: null as string | null,
 }
 
 export function shouldSkipViewportPick() {

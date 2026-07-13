@@ -3,6 +3,7 @@ export type NodeType =
   | 'ground'
   | 'cube'
   | 'sphere'
+  | 'nav-waypoint'
   | 'distant-light'
   | 'point-light'
   | 'physical-distant-light'

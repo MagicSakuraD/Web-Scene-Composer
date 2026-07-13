@@ -15,12 +15,20 @@ const NODE_NAMES: Record<NodeType, string> = {
   ground: 'Ground Plane',
   cube: 'Cube',
   sphere: 'Sphere',
+  'nav-waypoint': 'Nav Waypoint',
   'distant-light': 'Distant Light',
   'point-light': 'Point Light',
   'asset-ref': 'Asset',
 }
 
 const NODE_DEFAULTS: Partial<Record<NodeType, Partial<SceneNode>>> = {
+  'nav-waypoint': {
+    transform: {
+      position: [0, 0.05, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+    },
+  },
   ground: {
     transform: DEFAULT_TRANSFORM,
   },

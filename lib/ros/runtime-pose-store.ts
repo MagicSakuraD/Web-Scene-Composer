@@ -2,13 +2,15 @@ import * as THREE from 'three'
 import type { OdomMessage } from '@/lib/foxglove/ros-serialization'
 import { rosPositionToThree, rosQuaternionToThree } from '@/lib/ros/ros-three-coords'
 
-/** 高频 odom 缓存，脱离 React 渲染周期 */
+/** 高频 odom 缓存，脱离 React 渲染周期（仅底盘位姿） */
 class RuntimePoseStore {
   robotNodeId: string | null = null
   active = false
+  /** 是否已收到至少一条 odom */
+  hasOdom = false
   position = new THREE.Vector3()
   quaternion = new THREE.Quaternion()
-  /** 用于本地轮子动画（Dead Reckoning），不依赖网络逐帧同步关节 */
+  /** 底盘 twist（ROS 车体坐标），用于本地轮子 Dead Reckoning */
   linearX = 0
   angularZ = 0
 
@@ -18,6 +20,7 @@ class RuntimePoseStore {
   }
 
   setFromOdom(odom: OdomMessage) {
+    this.hasOdom = true
     rosPositionToThree(
       odom.position.x,
       odom.position.y,
@@ -38,6 +41,7 @@ class RuntimePoseStore {
   reset() {
     this.robotNodeId = null
     this.active = false
+    this.hasOdom = false
     this.linearX = 0
     this.angularZ = 0
   }

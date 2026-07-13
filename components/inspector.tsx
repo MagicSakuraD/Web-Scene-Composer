@@ -10,6 +10,8 @@ import {
 } from '@/lib/scene/atoms'
 import { getNodeIcon } from '@/lib/scene/node-icons'
 import type { Transform } from '@/lib/scene/types'
+import { rosPositionToThree, threePositionToRos } from '@/lib/ros/ros-three-coords'
+import { NAV_MAP_FRAME } from '@/lib/ros/nav-goal-config'
 import { useI18n } from '@/hooks/use-i18n'
 
 interface InspectorSectionProps {
@@ -80,6 +82,16 @@ function VectorInput({ values, onChange, defaultValue = 0 }: VectorInputProps) {
   )
 }
 
+function threePosToMapFrame(pos: [number, number, number]): [number, number, number] {
+  const ros = threePositionToRos(pos[0], pos[1], pos[2])
+  return [ros.x, ros.y, ros.z]
+}
+
+function mapFrameToThreePos(pos: [number, number, number]): [number, number, number] {
+  const three = rosPositionToThree(pos[0], pos[1], pos[2])
+  return [three.x, three.y, three.z]
+}
+
 export function Inspector() {
   const { t } = useI18n()
   const node = useAtomValue(selectedNodeAtom)
@@ -117,8 +129,25 @@ export function Inspector() {
   const isPhysicalLight = node.type === 'physical-distant-light'
   const isAsset = node.type === 'asset-ref'
   const isGltfPrim = node.type === 'gltf-prim'
+  const isNavWaypoint = node.type === 'nav-waypoint'
   const showTransform =
     node.type !== 'group' && node.type !== 'ground' && !isGltfPrim
+
+  const positionValues = isNavWaypoint
+    ? threePosToMapFrame(node.transform.position)
+    : node.transform.position
+
+  const handlePositionChange = (axis: 0 | 1 | 2, value: number) => {
+    if (!node) return
+    if (isNavWaypoint) {
+      const mapPos = threePosToMapFrame(node.transform.position)
+      mapPos[axis] = value
+      const threePos = mapFrameToThreePos(mapPos)
+      setTransform({ id: node.id, transform: { position: threePos } })
+      return
+    }
+    updateAxis('position', axis, value)
+  }
 
   return (
     <div className="h-full flex flex-col bg-sidebar flex-1 min-w-0">
@@ -135,10 +164,15 @@ export function Inspector() {
           <InspectorSection title={t('inspector.transform')}>
             <PropertyRow label={t('inspector.position')}>
               <VectorInput
-                values={node.transform.position}
-                onChange={(axis, v) => updateAxis('position', axis, v)}
+                values={positionValues}
+                onChange={handlePositionChange}
               />
             </PropertyRow>
+            {isNavWaypoint && (
+              <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
+                {t('inspector.navWaypointPositionHint')} ({NAV_MAP_FRAME})
+              </p>
+            )}
             <PropertyRow label={t('inspector.rotation')}>
               <VectorInput
                 values={node.transform.rotation}

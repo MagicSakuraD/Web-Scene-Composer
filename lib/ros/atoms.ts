@@ -20,6 +20,8 @@ export interface SimulateLogEntry {
 export const CMD_VEL_TOPIC = '/cmd_vel'
 export const ODOM_TOPIC = '/chassis/odom'
 
+export { TF_TOPIC } from '@/lib/ros/tf-config'
+
 export { FOXGLOVE_WS_URL } from '@/lib/ros/foxglove-config'
 
 export const simulateStatusAtom = atom<SimulateStatus>('idle')
@@ -50,6 +52,7 @@ export type BottomPanelTabType =
   | 'camera-viewer'
   | 'lidar-viewer'
   | 'material-graph'
+  | 'nav-goal'
 
 export interface BottomPanelTab {
   id: string
@@ -114,4 +117,24 @@ export const lidarDisplayAtom = atom<LidarDisplayConfig>({
   colorMode: 'turbo',
   heightMin: null,
   heightMax: null,
+})
+
+export type NavGoalPhase = 'idle' | 'sending' | 'navigating' | 'succeeded' | 'canceled' | 'aborted' | 'failed'
+
+export interface NavGoalState {
+  phase: NavGoalPhase
+  waypointNodeId: string | null
+  lastMessage: string | null
+  distanceRemaining: number | null
+  goalStatus: number | null
+  servicesReady: boolean
+}
+
+export const navGoalStateAtom = atom<NavGoalState>({
+  phase: 'idle',
+  waypointNodeId: null,
+  lastMessage: null,
+  distanceRemaining: null,
+  goalStatus: null,
+  servicesReady: false,
 })

@@ -1,5 +1,8 @@
 import { MessageWriter, MessageReader } from '@foxglove/rosmsg2-serialization'
-import { ros2humble } from '@foxglove/rosmsg-msgs-common'
+import { ros2humble, ros2jazzy } from '@foxglove/rosmsg-msgs-common'
+
+/** Isaac / jazzy_ws 用 Jazzy；与 humble 布局相同时回退 humble */
+const ros2msgs = ros2jazzy ?? ros2humble
 
 /**
  * MessageWriter/MessageReader 以数组中第一个 MessageDefinition 为根类型，
@@ -441,4 +444,239 @@ export function decodePointCloud2(data: Uint8Array): DecodedPointCloud | null {
 export function isLidarPointCloudTopic(topic: string, schemaName?: string): boolean {
   if (schemaName?.includes('PointCloud2')) return true
   return /lidar|point_cloud|\/points$/i.test(topic)
+}
+
+const poseStampedDefs = [
+  ros2humble['geometry_msgs/PoseStamped'],
+  ros2humble['std_msgs/Header'],
+  ros2humble['builtin_interfaces/Time'],
+  ros2humble['geometry_msgs/Pose'],
+  ros2humble['geometry_msgs/Point'],
+  ros2humble['geometry_msgs/Quaternion'],
+]
+
+export const poseStampedWriter = new MessageWriter(poseStampedDefs)
+
+export interface RosPoseStamped {
+  header: { stamp: { sec: number; nanosec: number }; frame_id: string }
+  pose: {
+    position: { x: number; y: number; z: number }
+    orientation: { x: number; y: number; z: number; w: number }
+  }
+}
+
+const navigateToPoseRequestWriter = new MessageWriter([
+  {
+    name: 'carter_web_nav_bridge/srv/NavigateToPose_Request',
+    definitions: [
+      { name: 'pose', type: 'geometry_msgs/PoseStamped', isComplex: true },
+    ],
+  },
+  ...poseStampedDefs,
+])
+
+/** carter_web_nav_bridge/srv/NavigateToPose request */
+export function encodeNavigateToPoseRequest(pose: RosPoseStamped): Uint8Array {
+  return navigateToPoseRequestWriter.writeMessage({ pose })
+}
+
+export function decodeBoolStringResponse(data: Uint8Array): { success: boolean; message: string } | null {
+  try {
+    const reader = new MessageReader([
+      {
+        name: 'Response',
+        definitions: [
+          { name: 'success', type: 'bool' },
+          { name: 'message', type: 'string' },
+        ],
+      },
+    ])
+    const msg = reader.readMessage<{ success: boolean; message: string }>(data)
+    return msg
+  } catch {
+    return null
+  }
+}
+
+export function encodeEmptyServiceRequest(): Uint8Array {
+  return new Uint8Array(0)
+}
+
+const navFeedbackDefs = [
+  {
+    name: 'nav2_msgs/action/NavigateToPose_FeedbackMessage',
+    definitions: [
+      { name: 'goal_id', type: 'unique_identifier_msgs/UUID', isComplex: true },
+      { name: 'feedback', type: 'nav2_msgs/NavigateToPose_Feedback', isComplex: true },
+    ],
+  },
+  {
+    name: 'unique_identifier_msgs/UUID',
+    definitions: [{ name: 'uuid', type: 'uint8', isArray: true, arrayLength: 16 }],
+  },
+  {
+    name: 'nav2_msgs/NavigateToPose_Feedback',
+    definitions: [
+      { name: 'current_pose', type: 'geometry_msgs/PoseStamped', isComplex: true },
+      { name: 'navigation_time', type: 'builtin_interfaces/Duration', isComplex: true },
+      { name: 'estimated_time_remaining', type: 'builtin_interfaces/Duration', isComplex: true },
+      { name: 'number_of_recoveries', type: 'int16' },
+      { name: 'distance_remaining', type: 'float32' },
+    ],
+  },
+  ros2humble['geometry_msgs/PoseStamped'],
+  ros2humble['std_msgs/Header'],
+  ros2humble['builtin_interfaces/Time'],
+  ros2humble['geometry_msgs/Pose'],
+  ros2humble['geometry_msgs/Point'],
+  ros2humble['geometry_msgs/Quaternion'],
+  ros2humble['builtin_interfaces/Duration'],
+]
+
+const navFeedbackReader = new MessageReader(navFeedbackDefs)
+
+export interface NavGoalFeedback {
+  distanceRemaining: number
+  recoveries: number
+  currentPose: RosPoseStamped['pose'] & { frameId: string }
+}
+
+export function decodeNavGoalFeedback(data: Uint8Array): NavGoalFeedback | null {
+  try {
+    const msg = navFeedbackReader.readMessage<{
+      feedback: {
+        current_pose: RosPoseStamped
+        number_of_recoveries: number
+        distance_remaining: number
+      }
+    }>(data)
+    const fb = msg.feedback
+    return {
+      distanceRemaining: fb.distance_remaining,
+      recoveries: fb.number_of_recoveries,
+      currentPose: {
+        ...fb.current_pose.pose,
+        frameId: fb.current_pose.header.frame_id,
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
+const navStatusDefs = [
+  {
+    name: 'action_msgs/msg/GoalStatusArray',
+    definitions: [
+      { name: 'status_list', type: 'action_msgs/GoalStatus', isArray: true },
+    ],
+  },
+  {
+    name: 'action_msgs/GoalStatus',
+    definitions: [
+      { name: 'goal_info', type: 'action_msgs/GoalInfo', isComplex: true },
+      { name: 'status', type: 'int8' },
+    ],
+  },
+  {
+    name: 'action_msgs/GoalInfo',
+    definitions: [
+      { name: 'goal_id', type: 'unique_identifier_msgs/UUID', isComplex: true },
+      { name: 'stamp', type: 'builtin_interfaces/Time', isComplex: true },
+    ],
+  },
+  {
+    name: 'unique_identifier_msgs/UUID',
+    definitions: [{ name: 'uuid', type: 'uint8', isArray: true, arrayLength: 16 }],
+  },
+  ros2humble['builtin_interfaces/Time'],
+]
+
+const navStatusReader = new MessageReader(navStatusDefs)
+
+/** action_msgs/GoalStatus status codes */
+export const GOAL_STATUS = {
+  UNKNOWN: 0,
+  ACCEPTED: 1,
+  EXECUTING: 2,
+  CANCELING: 3,
+  SUCCEEDED: 4,
+  CANCELED: 5,
+  ABORTED: 6,
+} as const
+
+export function decodeNavGoalStatus(data: Uint8Array): number | null {
+  try {
+    const msg = navStatusReader.readMessage<{ status_list: { status: number }[] }>(data)
+    const latest = msg.status_list[msg.status_list.length - 1]
+    return latest?.status ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 必须用官方定义（含 isComplex: true）。
+ * 手写 `{ isArray: true }` 缺 isComplex 会导致 unbounded sequence 解失败，
+ * 表现：Bridge 已订 /tf，但 tfRuntimeStore 永远为空；odom 不受影响。
+ */
+const tfMessageDefs = [
+  ros2msgs['tf2_msgs/TFMessage'],
+  ros2msgs['geometry_msgs/TransformStamped'],
+  ros2msgs['std_msgs/Header'],
+  ros2msgs['builtin_interfaces/Time'],
+  ros2msgs['geometry_msgs/Transform'],
+  ros2msgs['geometry_msgs/Vector3'],
+  ros2msgs['geometry_msgs/Quaternion'],
+]
+
+const tfMessageReader = new MessageReader(tfMessageDefs)
+
+export interface DecodedTfTransform {
+  parentFrame: string
+  childFrame: string
+  transform: {
+    translation: { x: number; y: number; z: number }
+    rotation: { x: number; y: number; z: number; w: number }
+  }
+}
+
+let tfDecodeFailLogged = false
+
+export function decodeTfMessage(data: Uint8Array): DecodedTfTransform[] | null {
+  try {
+    const msg = tfMessageReader.readMessage<{
+      transforms: Array<{
+        header: { frame_id: string }
+        child_frame_id: string
+        transform: {
+          translation: { x: number; y: number; z: number }
+          rotation: { x: number; y: number; z: number; w: number }
+        }
+      }>
+    }>(data)
+
+    if (!msg.transforms || !Array.isArray(msg.transforms)) {
+      if (!tfDecodeFailLogged) {
+        tfDecodeFailLogged = true
+        console.warn('[TF] decodeTfMessage: transforms 非数组', msg)
+      }
+      return null
+    }
+
+    return msg.transforms.map((t) => ({
+      parentFrame: t.header.frame_id,
+      childFrame: t.child_frame_id,
+      transform: t.transform,
+    }))
+  } catch (err) {
+    if (!tfDecodeFailLogged) {
+      tfDecodeFailLogged = true
+      console.warn('[TF] decodeTfMessage CDR 失败', {
+        byteLength: data.byteLength,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+    return null
+  }
 }

@@ -14,6 +14,7 @@ import {
   Camera,
   Radar,
   Layers,
+  Navigation,
   X,
 } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -33,6 +34,8 @@ import { CameraViewerPanel } from '@/components/panels/camera-viewer-panel'
 import { LidarViewerPanel } from '@/components/panels/lidar-viewer-panel'
 import { MaterialGraphPanel } from '@/components/panels/material-graph-panel'
 import { LidarRuntime } from '@/components/panels/lidar-runtime'
+import { NavGoalPanel } from '@/components/panels/nav-goal-panel'
+import { NavGoalRuntime } from '@/components/panels/nav-goal-runtime'
 import { ConsolePanel } from '@/components/panels/console-panel'
 import { useI18n } from '@/hooks/use-i18n'
 import { panelNameKey } from '@/lib/i18n/panel-messages'
@@ -52,6 +55,8 @@ function tabIcon(type: BottomPanelTab['type']) {
       return Radar
     case 'material-graph':
       return Layers
+    case 'nav-goal':
+      return Navigation
     default:
       return FileBox
   }
@@ -74,6 +79,7 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const hasDiffDriveTab = tabs.some((t) => t.type === 'diff-drive')
   const hasLidarTab = tabs.some((t) => t.type === 'lidar-viewer')
+  const hasNavGoalTab = tabs.some((t) => t.type === 'nav-goal')
 
   const triggerImport = (toScene: boolean) => {
     importToLibraryOnly.current = !toScene
@@ -99,6 +105,7 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
     <div className="h-full flex flex-col bg-sidebar">
       {hasDiffDriveTab && <DiffDriveRuntime />}
       {hasLidarTab && <LidarRuntime />}
+      {hasNavGoalTab && <NavGoalRuntime />}
       <GltfFileInput ref={fileInputRef} onChange={handleFileChange} />
 
       <div className="relative z-20 flex items-center border-b border-border bg-panel-header shrink-0">
@@ -165,6 +172,7 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
           {activeTab.type === 'diff-drive' && <DiffDrivePanel />}
           {activeTab.type === 'camera-viewer' && <CameraViewerPanel />}
           {activeTab.type === 'lidar-viewer' && <LidarViewerPanel />}
+          {activeTab.type === 'nav-goal' && <NavGoalPanel />}
           {activeTab.type === 'material-graph' && <MaterialGraphPanel />}
         </div>
       )}

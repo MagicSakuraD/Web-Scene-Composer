@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { TransformControls } from '@react-three/drei'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { useThree } from '@react-three/fiber'
@@ -11,7 +11,7 @@ import {
   spaceModeAtom,
   updateNodeTransformAtom,
 } from '@/lib/scene/atoms'
-import type { TransformMode } from '@/lib/scene/types'
+import type { Transform, TransformMode } from '@/lib/scene/types'
 import { transformGizmoState } from '@/lib/viewport/transform-gizmo-state'
 
 interface TransformGizmoProps {
@@ -39,7 +39,19 @@ function transformsEqual(
   )
 }
 
-/** select 模式也显示移动 Gizmo（Reality Composer Pro / Isaac Sim 习惯） */
+function objectToTransform(object: THREE.Object3D): Transform {
+  return {
+    position: [object.position.x, object.position.y, object.position.z],
+    rotation: [
+      THREE.MathUtils.radToDeg(object.rotation.x),
+      THREE.MathUtils.radToDeg(object.rotation.y),
+      THREE.MathUtils.radToDeg(object.rotation.z),
+    ],
+    scale: [object.scale.x, object.scale.y, object.scale.z],
+  }
+}
+
+/** 仅 translate / rotate / scale 模式显示 Gizmo（select 模式只显示轮廓） */
 function resolveGizmoMode(mode: TransformMode): 'translate' | 'rotate' | 'scale' {
   if (mode === 'rotate') return 'rotate'
   if (mode === 'scale') return 'scale'
@@ -48,11 +60,22 @@ function resolveGizmoMode(mode: TransformMode): 'translate' | 'rotate' | 'scale'
 
 export function TransformGizmo({ object, nodeId }: TransformGizmoProps) {
   const controlsRef = useRef<TransformControlsImpl>(null)
-  const isDragging = useRef(false)
+  const objectRef = useRef(object)
+  const nodeIdRef = useRef(nodeId)
+  objectRef.current = object
+  nodeIdRef.current = nodeId
+
   const mode = useAtomValue(transformModeAtom)
   const space = useAtomValue(spaceModeAtom)
   const setTransform = useSetAtom(updateNodeTransformAtom)
   const orbit = useThree((s) => s.controls)
+
+  const commitTransform = useCallback(() => {
+    setTransform({
+      id: nodeIdRef.current,
+      transform: objectToTransform(objectRef.current),
+    })
+  }, [setTransform])
 
   useEffect(() => {
     const controls = controlsRef.current
@@ -71,38 +94,26 @@ export function TransformGizmo({ object, nodeId }: TransformGizmoProps) {
 
     const onDraggingChanged = (event: { value: unknown }) => {
       const dragging = Boolean(event.value)
-      isDragging.current = dragging
       transformGizmoState.dragging = dragging
+      transformGizmoState.draggingNodeId = dragging ? nodeIdRef.current : null
+
       if (orbit && 'enabled' in orbit) {
         ;(orbit as { enabled: boolean }).enabled = !dragging
       }
-    }
 
-    const onChange = () => {
-      if (!isDragging.current) return
-
-      setTransform({
-        id: nodeId,
-        transform: {
-          position: [object.position.x, object.position.y, object.position.z],
-          rotation: [
-            THREE.MathUtils.radToDeg(object.rotation.x),
-            THREE.MathUtils.radToDeg(object.rotation.y),
-            THREE.MathUtils.radToDeg(object.rotation.z),
-          ],
-          scale: [object.scale.x, object.scale.y, object.scale.z],
-        },
-      })
+      // 拖拽中只 mutate Three.js；松手后一次性写回 jotai，避免每帧触发 React 重渲染
+      if (!dragging) {
+        commitTransform()
+      }
     }
 
     controls.addEventListener('dragging-changed', onDraggingChanged)
-    controls.addEventListener('objectChange', onChange)
     return () => {
       controls.removeEventListener('dragging-changed', onDraggingChanged)
-      controls.removeEventListener('objectChange', onChange)
       transformGizmoState.dragging = false
+      transformGizmoState.draggingNodeId = null
     }
-  }, [object, nodeId, setTransform, orbit])
+  }, [commitTransform, orbit])
 
   return (
     <TransformControls
@@ -119,4 +130,4 @@ export function TransformGizmo({ object, nodeId }: TransformGizmoProps) {
   )
 }
 
-export { transformsEqual }
+export { transformsEqual, objectToTransform }

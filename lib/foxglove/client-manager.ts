@@ -1,23 +1,39 @@
 import { FoxgloveClient } from '@foxglove/ws-protocol'
-import type { Channel, ClientChannelId, SubscriptionId } from '@foxglove/ws-protocol'
+import type { Channel, ClientChannelId, Service, SubscriptionId } from '@foxglove/ws-protocol'
 import {
   encodeTwist,
   decodeOdometry,
+  decodeTfMessage,
   decodeImageMessage,
   decodePointCloud2,
   isCameraImageTopic,
   isLidarPointCloudTopic,
   preferCompressedCameraTopics,
+  encodeNavigateToPoseRequest,
+  encodeEmptyServiceRequest,
+  decodeBoolStringResponse,
+  decodeNavGoalFeedback,
+  decodeNavGoalStatus,
   type CmdVel,
   type DecodedCameraFrame,
   type DecodedPointCloud,
+  type RosPoseStamped,
 } from '@/lib/foxglove/ros-serialization'
 import { FOXGLOVE_WS_CANDIDATES, FOXGLOVE_WS_SUBPROTOCOLS } from '@/lib/ros/foxglove-config'
 import {
   CMD_VEL_TOPIC,
   ODOM_TOPIC,
+  TF_TOPIC,
   type SimulateLogEntry,
 } from '@/lib/ros/atoms'
+import {
+  NAV_CANCEL_SERVICE,
+  NAV_FEEDBACK_TOPIC,
+  NAV_GOAL_SERVICE,
+  NAV_STATUS_TOPIC,
+} from '@/lib/ros/nav-goal-config'
+import { navGoalStore } from '@/lib/ros/nav-goal-store'
+import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
 
 type LogFn = (entry: Omit<SimulateLogEntry, 'id' | 'time'>) => void
 type OdomFn = (pose: ReturnType<typeof decodeOdometry>) => void
@@ -27,6 +43,9 @@ type TopicsListener = () => void
 
 const EMPTY_CAMERA_TOPICS: readonly string[] = []
 const EMPTY_LIDAR_TOPICS: readonly string[] = []
+const TF_DEBUG_CHILD = 'caster_swivel_left'
+const TF_DEBUG_THROTTLE_MS = 800
+const TF_DEBUG_LIST_LIMIT = 24
 
 interface ImageSubscription {
   topic: string
@@ -54,17 +73,29 @@ class FoxgloveBridgeManager {
   private cmdVelChannelId: ClientChannelId | null = null
   private odomSubscriptionId: SubscriptionId | null = null
   private odomChannelId: number | null = null
+  private tfSubscriptionId: SubscriptionId | null = null
   private clientPublishEnabled = false
+  private servicesEnabled = false
   private connectGeneration = 0
   private log: LogFn = () => {}
   private onOdom: OdomFn = () => {}
   private channels: Channel[] = []
+  private services: Service[] = []
+  private nextServiceCallId = 1
+  private pendingServiceCalls = new Map<
+    number,
+    { resolve: (data: Uint8Array) => void; reject: (err: Error) => void }
+  >()
+  private navFeedbackSubscriptionId: SubscriptionId | null = null
+  private navStatusSubscriptionId: SubscriptionId | null = null
+  private navGoalActive = false
   private cachedCameraTopics: readonly string[] = EMPTY_CAMERA_TOPICS
   private cachedLidarTopics: readonly string[] = EMPTY_LIDAR_TOPICS
   private imageSubs = new Map<string, ImageSubscription>()
   private pointCloudSubs = new Map<string, PointCloudSubscription>()
   private topicListeners = new Set<TopicsListener>()
   private lidarTopicListeners = new Set<TopicsListener>()
+  private lastTfDebugAt = 0
 
   /** Simulate：建立 WebSocket 并订阅 odom（自动尝试 127.0.0.1 / localhost） */
   async connect(log: LogFn, onOdom: OdomFn): Promise<void> {
@@ -127,6 +158,7 @@ class FoxgloveBridgeManager {
           if (generation !== this.connectGeneration) return
           window.clearTimeout(timeout)
           this.clientPublishEnabled = info.capabilities.includes('clientPublish')
+          this.servicesEnabled = info.capabilities.includes('services')
           this.log({
             level: 'info',
             message: `Bridge: ${info.name} · capabilities: ${info.capabilities.join(', ')}`,
@@ -146,8 +178,37 @@ class FoxgloveBridgeManager {
           this.notifyTopicListeners()
           this.notifyLidarTopicListeners()
           this.syncOdomSubscription(client)
+          this.syncTfSubscription(client)
           this.syncImageSubscriptions(client)
           this.syncPointCloudSubscriptions(client)
+          if (this.navGoalActive) {
+            this.syncNavGoalSubscriptions(client)
+          }
+        })
+
+        client.on('advertiseServices', (services: Service[]) => {
+          if (generation !== this.connectGeneration) return
+          this.services = services
+          const hasNav = services.some((s) => s.name === NAV_GOAL_SERVICE)
+          const hasCancel = services.some((s) => s.name === NAV_CANCEL_SERVICE)
+          navGoalStore.setServicesReady(hasNav && hasCancel)
+          if (hasNav && hasCancel) {
+            this.log({ level: 'info', message: 'Nav2 桥接服务已发现' })
+          }
+        })
+
+        client.on('serviceCallResponse', (response) => {
+          const pending = this.pendingServiceCalls.get(response.callId)
+          if (!pending) return
+          this.pendingServiceCalls.delete(response.callId)
+          pending.resolve(new Uint8Array(response.data))
+        })
+
+        client.on('serviceCallFailure', (failure) => {
+          const pending = this.pendingServiceCalls.get(failure.callId)
+          if (!pending) return
+          this.pendingServiceCalls.delete(failure.callId)
+          pending.reject(new Error(failure.message))
         })
 
         client.on('message', (event) => {
@@ -163,6 +224,54 @@ class FoxgloveBridgeManager {
             return
           }
 
+          if (event.subscriptionId === this.tfSubscriptionId) {
+            const bytes =
+              event.data instanceof Uint8Array
+                ? event.data
+                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const transforms = decodeTfMessage(bytes)
+            if (!transforms) {
+              // decode 失败时 decodeTfMessage 已打一次 warn；此处不再刷屏
+              return
+            }
+
+            tfRuntimeStore.updateTransforms(transforms)
+
+            // 控制台调试：window.tfDebugCaster = true
+            if (typeof window !== 'undefined') {
+              const w = window as unknown as { tfDebugCaster?: boolean }
+              if (w.tfDebugCaster) {
+                const now = performance.now()
+                if (now - this.lastTfDebugAt >= TF_DEBUG_THROTTLE_MS) {
+                  const childFrames = transforms
+                    .map((t) => (t.childFrame.startsWith('/') ? t.childFrame.slice(1) : t.childFrame))
+                    .slice(0, TF_DEBUG_LIST_LIMIT)
+                  const hit = transforms.find(
+                    (t) =>
+                      (t.childFrame.startsWith('/') ? t.childFrame.slice(1) : t.childFrame) ===
+                      TF_DEBUG_CHILD,
+                  )
+                  this.lastTfDebugAt = now
+                  if (hit) {
+                    console.log('[TF:capture]', {
+                      parentFrame: hit.parentFrame,
+                      childFrame: hit.childFrame,
+                      translation: hit.transform.translation,
+                      rotation: hit.transform.rotation,
+                    })
+                  } else {
+                    console.log('[TF:miss]', {
+                      wantedChildFrame: TF_DEBUG_CHILD,
+                      messageTransformCount: transforms.length,
+                      sampleChildFrames: childFrames,
+                    })
+                  }
+                }
+              }
+            }
+            return
+          }
+
           for (const sub of this.imageSubs.values()) {
             if (sub.subscriptionId !== event.subscriptionId) continue
             void this.handleImageMessage(sub, event.data)
@@ -172,6 +281,26 @@ class FoxgloveBridgeManager {
           for (const sub of this.pointCloudSubs.values()) {
             if (sub.subscriptionId !== event.subscriptionId) continue
             this.handlePointCloudMessage(sub, event.data)
+            return
+          }
+
+          if (event.subscriptionId === this.navFeedbackSubscriptionId) {
+            const bytes =
+              event.data instanceof Uint8Array
+                ? event.data
+                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const fb = decodeNavGoalFeedback(bytes)
+            if (fb) navGoalStore.applyFeedback(fb)
+            return
+          }
+
+          if (event.subscriptionId === this.navStatusSubscriptionId) {
+            const bytes =
+              event.data instanceof Uint8Array
+                ? event.data
+                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const status = decodeNavGoalStatus(bytes)
+            if (status != null) navGoalStore.applyStatus(status)
             return
           }
         })
@@ -215,6 +344,15 @@ class FoxgloveBridgeManager {
       this.odomChannelId = odom.id
       this.odomSubscriptionId = client.subscribe(odom.id)
       this.log({ level: 'info', message: `已订阅 ${ODOM_TOPIC}` })
+    }
+  }
+
+  private syncTfSubscription(client: FoxgloveClient) {
+    const tf = this.channels.find((c) => c.topic === TF_TOPIC)
+    if (tf && this.tfSubscriptionId == null) {
+      this.tfSubscriptionId = client.subscribe(tf.id)
+      tfRuntimeStore.setActive(true)
+      this.log({ level: 'info', message: `已订阅 ${TF_TOPIC}（轮子关节）` })
     }
   }
 
@@ -436,8 +574,14 @@ class FoxgloveBridgeManager {
     this.cmdVelChannelId = null
     this.odomSubscriptionId = null
     this.odomChannelId = null
+    this.tfSubscriptionId = null
     this.clientPublishEnabled = false
+    this.servicesEnabled = false
     this.channels = []
+    this.services = []
+    this.pendingServiceCalls.clear()
+    this.navFeedbackSubscriptionId = null
+    this.navStatusSubscriptionId = null
     for (const sub of this.imageSubs.values()) {
       sub.channelId = null
       sub.subscriptionId = null
@@ -480,6 +624,115 @@ class FoxgloveBridgeManager {
     return this.cmdVelChannelId != null
   }
 
+  /** Nav Goal 面板：订阅 feedback/status 并跟踪桥接 service */
+  enableNavGoalTracking(active: boolean) {
+    this.navGoalActive = active
+    if (!this.client) {
+      if (!active) navGoalStore.setServicesReady(false)
+      return
+    }
+    if (active) {
+      this.syncNavGoalSubscriptions(this.client)
+    } else {
+      this.unsubscribeNavGoalTopics()
+      navGoalStore.setServicesReady(false)
+    }
+  }
+
+  private syncNavGoalSubscriptions(client: FoxgloveClient) {
+    const feedback = this.channels.find((c) => c.topic === NAV_FEEDBACK_TOPIC)
+    if (feedback && this.navFeedbackSubscriptionId == null) {
+      this.navFeedbackSubscriptionId = client.subscribe(feedback.id)
+      this.log({ level: 'info', message: `已订阅 ${NAV_FEEDBACK_TOPIC}` })
+    }
+    const status = this.channels.find((c) => c.topic === NAV_STATUS_TOPIC)
+    if (status && this.navStatusSubscriptionId == null) {
+      this.navStatusSubscriptionId = client.subscribe(status.id)
+      this.log({ level: 'info', message: `已订阅 ${NAV_STATUS_TOPIC}` })
+    }
+  }
+
+  private unsubscribeNavGoalTopics() {
+    if (!this.client) return
+    if (this.navFeedbackSubscriptionId != null) {
+      this.client.unsubscribe(this.navFeedbackSubscriptionId)
+      this.navFeedbackSubscriptionId = null
+    }
+    if (this.navStatusSubscriptionId != null) {
+      this.client.unsubscribe(this.navStatusSubscriptionId)
+      this.navStatusSubscriptionId = null
+    }
+  }
+
+  private findService(name: string): Service | undefined {
+    return this.services.find((s) => s.name === name)
+  }
+
+  private callService(serviceName: string, data: Uint8Array): Promise<Uint8Array> {
+    if (!this.client || !this.servicesEnabled) {
+      return Promise.reject(new Error('Foxglove Bridge 未开启 services capability'))
+    }
+    const service = this.findService(serviceName)
+    if (!service) {
+      return Promise.reject(new Error(`服务未找到: ${serviceName}`))
+    }
+    const callId = this.nextServiceCallId++
+    return new Promise((resolve, reject) => {
+      this.pendingServiceCalls.set(callId, { resolve, reject })
+      this.client!.sendServiceCallRequest({
+        serviceId: service.id,
+        callId,
+        encoding: 'cdr',
+        data,
+      })
+      window.setTimeout(() => {
+        if (!this.pendingServiceCalls.has(callId)) return
+        this.pendingServiceCalls.delete(callId)
+        reject(new Error(`服务调用超时: ${serviceName}`))
+      }, 15000)
+    })
+  }
+
+  async sendNavigateToPose(pose: RosPoseStamped): Promise<{ success: boolean; message: string }> {
+    navGoalStore.setSending('正在发送导航目标…')
+    try {
+      const data = await this.callService(NAV_GOAL_SERVICE, encodeNavigateToPoseRequest(pose))
+      const decoded = decodeBoolStringResponse(data)
+      if (!decoded) throw new Error('无法解析服务响应')
+      if (decoded.success) {
+        navGoalStore.setMessage(decoded.message)
+        navGoalStore.applyStatus(2)
+      } else {
+        // Service may report failure while action still runs; status topic overrides later.
+        navGoalStore.setMessage(decoded.message)
+      }
+      return decoded
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      navGoalStore.setFailed(message)
+      throw err
+    }
+  }
+
+  async cancelNavigation(): Promise<{ success: boolean; message: string }> {
+    try {
+      const data = await this.callService(NAV_CANCEL_SERVICE, encodeEmptyServiceRequest())
+      const decoded = decodeBoolStringResponse(data)
+      if (!decoded) throw new Error('无法解析服务响应')
+      if (decoded.success) {
+        navGoalStore.applyStatus(5)
+        navGoalStore.setMessage(decoded.message)
+      } else {
+        navGoalStore.setFailed(decoded.message)
+      }
+      return decoded
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      navGoalStore.setFailed(message)
+      throw err
+    }
+  }
+
   getConnectedUrl() {
     return this.connectedUrl
   }
@@ -489,6 +742,9 @@ class FoxgloveBridgeManager {
     if (this.client) {
       if (this.odomSubscriptionId != null) {
         this.client.unsubscribe(this.odomSubscriptionId)
+      }
+      if (this.tfSubscriptionId != null) {
+        this.client.unsubscribe(this.tfSubscriptionId)
       }
       for (const sub of this.imageSubs.values()) {
         if (sub.subscriptionId != null) {
@@ -500,6 +756,7 @@ class FoxgloveBridgeManager {
           this.client.unsubscribe(sub.subscriptionId)
         }
       }
+      this.unsubscribeNavGoalTopics()
       if (this.cmdVelChannelId != null) {
         this.client.unadvertise(this.cmdVelChannelId)
       }
@@ -511,8 +768,14 @@ class FoxgloveBridgeManager {
     this.cmdVelChannelId = null
     this.odomSubscriptionId = null
     this.odomChannelId = null
+    this.tfSubscriptionId = null
     this.clientPublishEnabled = false
+    this.servicesEnabled = false
     this.channels = []
+    this.services = []
+    this.pendingServiceCalls.clear()
+    this.navGoalActive = false
+    tfRuntimeStore.reset()
     for (const sub of this.imageSubs.values()) {
       sub.channelId = null
       sub.subscriptionId = null

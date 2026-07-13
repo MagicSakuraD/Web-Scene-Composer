@@ -10,7 +10,9 @@ import {
 } from '@/lib/ros/atoms'
 import { foxgloveManager } from '@/lib/foxglove/client-manager'
 import { appendSimulateLog } from '@/lib/ros/simulate-actions'
+import { odomSceneCalibration } from '@/lib/ros/odom-scene-calibration'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
+import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
 import {
   findSimulateTargetNodeId,
   getSimulateTargetLabel,
@@ -54,6 +56,8 @@ export function useSimulate() {
       lidarPointStore.clearAll()
       foxgloveManager.disconnect()
       runtimePoseStore.reset()
+      odomSceneCalibration.reset()
+      tfRuntimeStore.reset()
       setRuntimeRobot(null)
       setStatus('idle')
       setError(null)
@@ -76,11 +80,13 @@ export function useSimulate() {
       const url = foxgloveManager.getConnectedUrl()
       pushLog({
         level: 'info',
-        message: `Simulate 已连接${url ? ` (${url})` : ''} — 订阅 /chassis/odom`,
+        message: `Simulate 已连接${url ? ` (${url})` : ''} — 订阅 /chassis/odom、/tf`,
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       runtimePoseStore.reset()
+      odomSceneCalibration.reset()
+      tfRuntimeStore.reset()
       setRuntimeRobot(null)
       setStatus('error')
       setError(msg)

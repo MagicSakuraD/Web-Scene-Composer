@@ -21,6 +21,8 @@ import {
   objectByNodeId,
 } from '@/lib/scene/object-registry'
 import { TransformGizmo, transformsEqual } from './transform-gizmo'
+import { transformGizmoState } from '@/lib/viewport/transform-gizmo-state'
+import { SelectionOutline } from './selection-outline'
 import { RuntimeRobotSync } from './runtime-robot-sync'
 import { LidarPointCloud } from './lidar-point-cloud'
 import { MaterialGraphSync } from './material-graph-sync'
@@ -102,6 +104,11 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
       return
     }
 
+    // Gizmo 拖拽中由 TransformControls 直接写 Three.js，跳过 atom 回写
+    if (transformGizmoState.dragging && transformGizmoState.draggingNodeId === node.id) {
+      return
+    }
+
     if (
       transformsEqual(obj, node.transform.position, node.transform.rotation, node.transform.scale)
     ) {
@@ -138,6 +145,19 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
             <sphereGeometry args={[0.5, 32, 32]} />
             <meshStandardMaterial color="#e8e8e8" />
           </mesh>
+        )
+      case 'nav-waypoint':
+        return (
+          <group>
+            <mesh position={[0, 0.08, 0]} castShadow>
+              <cylinderGeometry args={[0.12, 0.12, 0.06, 16]} />
+              <meshStandardMaterial color="#22c55e" emissive="#14532d" emissiveIntensity={0.4} />
+            </mesh>
+            <mesh position={[0.28, 0.12, 0]} rotation={[0, 0, -Math.PI / 2]} castShadow>
+              <coneGeometry args={[0.1, 0.35, 16]} />
+              <meshStandardMaterial color="#4ade80" emissive="#166534" emissiveIntensity={0.5} />
+            </mesh>
+          </group>
         )
       case 'distant-light':
         return (
@@ -207,6 +227,7 @@ function SelectionObjectReady() {
 function SelectedGizmo() {
   const selectedId = useAtomValue(selectedNodeIdAtom)
   const selectedNode = useAtomValue(selectedNodeAtom)
+  const mode = useAtomValue(transformModeAtom)
   useAtomValue(selectedObjectReadyAtom)
 
   const object = selectedId
@@ -214,6 +235,7 @@ function SelectedGizmo() {
     : undefined
 
   if (!selectedId || !selectedNode || !object) return null
+  if (mode === 'select') return null
   if (selectedNode.type === 'group' || selectedNode.type === 'ground') {
     return null
   }
@@ -235,6 +257,7 @@ export function SceneRenderer() {
         <SceneNodeObject key={node.id} node={node} />
       ))}
       <SelectionObjectReady />
+      <SelectionOutline />
       <SelectedGizmo />
     </>
   )
