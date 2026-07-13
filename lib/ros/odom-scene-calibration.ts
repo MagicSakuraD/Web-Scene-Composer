@@ -72,6 +72,27 @@ class OdomSceneCalibration {
 
     return { pos: outPos, quat: outQuat }
   }
+
+  /**
+   * odom 坐标系下的点 → 与小车相同的场景显示坐标（方案 B 线性映射）。
+   * 用于 /local_plan（Nav2 局部路径通常在 odom 系，非 map）。
+   */
+  odomRosPointToSceneThree(
+    rosX: number,
+    rosY: number,
+    rosZ: number,
+    out = this.outPos,
+  ): THREE.Vector3 {
+    if (!this.isReady()) {
+      return out.set(rosX, rosZ, -rosY)
+    }
+    this.deltaPos.set(rosX, rosZ, -rosY).sub(this.odomOriginPos)
+    if (ODOM_DELTA_FLIP_XZ) {
+      this.deltaPos.x *= -1
+      this.deltaPos.z *= -1
+    }
+    return out.copy(this.sceneOriginPos).add(this.deltaPos)
+  }
 }
 
 export const odomSceneCalibration = new OdomSceneCalibration()

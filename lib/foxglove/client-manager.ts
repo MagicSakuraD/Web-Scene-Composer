@@ -14,6 +14,7 @@ import {
   decodeBoolStringResponse,
   decodeNavGoalFeedback,
   decodeNavGoalStatus,
+  decodeNavPath,
   type CmdVel,
   type DecodedCameraFrame,
   type DecodedPointCloud,
@@ -31,8 +32,12 @@ import {
   NAV_FEEDBACK_TOPIC,
   NAV_GOAL_SERVICE,
   NAV_STATUS_TOPIC,
+  LOCAL_PLAN_TOPIC,
+  PLAN_SMOOTHED_TOPIC,
+  PLAN_TOPIC,
 } from '@/lib/ros/nav-goal-config'
 import { navGoalStore } from '@/lib/ros/nav-goal-store'
+import { navPathStore } from '@/lib/ros/nav-path-store'
 import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
 
 type LogFn = (entry: Omit<SimulateLogEntry, 'id' | 'time'>) => void
@@ -88,6 +93,9 @@ class FoxgloveBridgeManager {
   >()
   private navFeedbackSubscriptionId: SubscriptionId | null = null
   private navStatusSubscriptionId: SubscriptionId | null = null
+  private navPlanSmoothedSubscriptionId: SubscriptionId | null = null
+  private navPlanSubscriptionId: SubscriptionId | null = null
+  private navLocalPlanSubscriptionId: SubscriptionId | null = null
   private navGoalActive = false
   private cachedCameraTopics: readonly string[] = EMPTY_CAMERA_TOPICS
   private cachedLidarTopics: readonly string[] = EMPTY_LIDAR_TOPICS
@@ -183,6 +191,7 @@ class FoxgloveBridgeManager {
           this.syncPointCloudSubscriptions(client)
           if (this.navGoalActive) {
             this.syncNavGoalSubscriptions(client)
+            this.syncNavPathSubscriptions(client)
           }
         })
 
@@ -194,6 +203,10 @@ class FoxgloveBridgeManager {
           navGoalStore.setServicesReady(hasNav && hasCancel)
           if (hasNav && hasCancel) {
             this.log({ level: 'info', message: 'Nav2 桥接服务已发现' })
+            if (this.navGoalActive) {
+              this.syncNavGoalSubscriptions(client)
+              this.syncNavPathSubscriptions(client)
+            }
           }
         })
 
@@ -300,7 +313,39 @@ class FoxgloveBridgeManager {
                 ? event.data
                 : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
             const status = decodeNavGoalStatus(bytes)
-            if (status != null) navGoalStore.applyStatus(status)
+            if (status != null) {
+              navGoalStore.applyStatus(status)
+            }
+            return
+          }
+
+          if (event.subscriptionId === this.navPlanSmoothedSubscriptionId) {
+            const bytes =
+              event.data instanceof Uint8Array
+                ? event.data
+                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const path = decodeNavPath(bytes)
+            if (path) navPathStore.setPath(PLAN_SMOOTHED_TOPIC, path)
+            return
+          }
+
+          if (event.subscriptionId === this.navPlanSubscriptionId) {
+            const bytes =
+              event.data instanceof Uint8Array
+                ? event.data
+                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const path = decodeNavPath(bytes)
+            if (path) navPathStore.setPath(PLAN_TOPIC, path)
+            return
+          }
+
+          if (event.subscriptionId === this.navLocalPlanSubscriptionId) {
+            const bytes =
+              event.data instanceof Uint8Array
+                ? event.data
+                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const path = decodeNavPath(bytes)
+            if (path) navPathStore.setPath(LOCAL_PLAN_TOPIC, path)
             return
           }
         })
@@ -394,6 +439,13 @@ class FoxgloveBridgeManager {
       if (sub.callbacks.size === 0) continue
       const channel = this.channels.find((c) => c.topic === sub.topic)
       if (!channel) continue
+      if (!isLidarPointCloudTopic(channel.topic, channel.schemaName)) {
+        this.log({
+          level: 'warn',
+          message: `跳过非 PointCloud2 话题: ${channel.topic} (${channel.schemaName})`,
+        })
+        continue
+      }
       if (sub.subscriptionId != null) continue
       sub.channelId = channel.id
       sub.schemaName = channel.schemaName
@@ -465,10 +517,17 @@ class FoxgloveBridgeManager {
     if (this.client) {
       const channel = this.channels.find((c) => c.topic === topic)
       if (channel && sub.subscriptionId == null) {
-        sub.channelId = channel.id
-        sub.schemaName = channel.schemaName
-        sub.subscriptionId = this.client.subscribe(channel.id)
-        this.log({ level: 'info', message: `雷达已订阅 ${topic}` })
+        if (!isLidarPointCloudTopic(channel.topic, channel.schemaName)) {
+          this.log({
+            level: 'warn',
+            message: `跳过非 PointCloud2 话题: ${topic} (${channel.schemaName})`,
+          })
+        } else {
+          sub.channelId = channel.id
+          sub.schemaName = channel.schemaName
+          sub.subscriptionId = this.client.subscribe(channel.id)
+          this.log({ level: 'info', message: `雷达已订阅 ${topic}` })
+        }
       }
     }
 
@@ -633,9 +692,11 @@ class FoxgloveBridgeManager {
     }
     if (active) {
       this.syncNavGoalSubscriptions(this.client)
+      this.syncNavPathSubscriptions(this.client)
     } else {
       this.unsubscribeNavGoalTopics()
       navGoalStore.setServicesReady(false)
+      navPathStore.reset()
     }
   }
 
@@ -652,6 +713,27 @@ class FoxgloveBridgeManager {
     }
   }
 
+  /** Nav Goal 面板打开时订阅 Nav2 路径（经 Foxglove，与 web_nav_bridge 无关） */
+  private syncNavPathSubscriptions(client: FoxgloveClient) {
+    const smoothed = this.channels.find((c) => c.topic === PLAN_SMOOTHED_TOPIC)
+    if (smoothed && this.navPlanSmoothedSubscriptionId == null) {
+      this.navPlanSmoothedSubscriptionId = client.subscribe(smoothed.id)
+      this.log({ level: 'info', message: `已订阅 ${PLAN_SMOOTHED_TOPIC}` })
+    }
+
+    const plan = this.channels.find((c) => c.topic === PLAN_TOPIC)
+    if (plan && this.navPlanSubscriptionId == null) {
+      this.navPlanSubscriptionId = client.subscribe(plan.id)
+      this.log({ level: 'info', message: `已订阅 ${PLAN_TOPIC}` })
+    }
+
+    const local = this.channels.find((c) => c.topic === LOCAL_PLAN_TOPIC)
+    if (local && this.navLocalPlanSubscriptionId == null) {
+      this.navLocalPlanSubscriptionId = client.subscribe(local.id)
+      this.log({ level: 'info', message: `已订阅 ${LOCAL_PLAN_TOPIC}` })
+    }
+  }
+
   private unsubscribeNavGoalTopics() {
     if (!this.client) return
     if (this.navFeedbackSubscriptionId != null) {
@@ -662,6 +744,19 @@ class FoxgloveBridgeManager {
       this.client.unsubscribe(this.navStatusSubscriptionId)
       this.navStatusSubscriptionId = null
     }
+    if (this.navPlanSmoothedSubscriptionId != null) {
+      this.client.unsubscribe(this.navPlanSmoothedSubscriptionId)
+      this.navPlanSmoothedSubscriptionId = null
+    }
+    if (this.navPlanSubscriptionId != null) {
+      this.client.unsubscribe(this.navPlanSubscriptionId)
+      this.navPlanSubscriptionId = null
+    }
+    if (this.navLocalPlanSubscriptionId != null) {
+      this.client.unsubscribe(this.navLocalPlanSubscriptionId)
+      this.navLocalPlanSubscriptionId = null
+    }
+    navPathStore.reset()
   }
 
   private findService(name: string): Service | undefined {
@@ -694,14 +789,15 @@ class FoxgloveBridgeManager {
   }
 
   async sendNavigateToPose(pose: RosPoseStamped): Promise<{ success: boolean; message: string }> {
-    navGoalStore.setSending('正在发送导航目标…')
+    navGoalStore.beginNewGoal('正在发送导航目标…')
+    navPathStore.reset()
     try {
       const data = await this.callService(NAV_GOAL_SERVICE, encodeNavigateToPoseRequest(pose))
       const decoded = decodeBoolStringResponse(data)
       if (!decoded) throw new Error('无法解析服务响应')
       if (decoded.success) {
         navGoalStore.setMessage(decoded.message)
-        navGoalStore.applyStatus(2)
+        // 阶段由 /navigate_to_pose/_action/status 驱动，勿在此硬编码 EXECUTING(2)
       } else {
         // Service may report failure while action still runs; status topic overrides later.
         navGoalStore.setMessage(decoded.message)
@@ -774,7 +870,7 @@ class FoxgloveBridgeManager {
     this.channels = []
     this.services = []
     this.pendingServiceCalls.clear()
-    this.navGoalActive = false
+    navPathStore.reset()
     tfRuntimeStore.reset()
     for (const sub of this.imageSubs.values()) {
       sub.channelId = null

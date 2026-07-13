@@ -54,22 +54,23 @@ function eulerDegToLog(obj: THREE.Object3D) {
   }
 }
 
-/** 在子树中按 TF frame 别名查找 Object3D */
+/** 在子树中按 TF frame 别名查找 Object3D（按 aliases 顺序优先，避免根节点 Nova_Carter_ROS 抢先匹配 base_link） */
 export function findObjectByTfFrame(root: THREE.Object3D, frameId: string): THREE.Object3D | null {
   const key = normalizeFrameId(frameId)
   const aliases = TF_FRAME_ALIASES[key] ?? [key]
-  let found: THREE.Object3D | null = null
 
-  root.traverse((obj) => {
-    if (found) return
-    const name = obj.name
-    if (!name) return
-    if (aliases.some((a) => a.toLowerCase() === name.toLowerCase())) {
-      found = obj
-    }
-  })
+  for (const alias of aliases) {
+    const needle = alias.toLowerCase()
+    if (root.name && root.name.toLowerCase() === needle) return root
+    let found: THREE.Object3D | null = null
+    root.traverse((obj) => {
+      if (found || obj === root || !obj.name) return
+      if (obj.name.toLowerCase() === needle) found = obj
+    })
+    if (found) return found
+  }
 
-  return found
+  return null
 }
 
 function getOrCaptureJointCalib(child: THREE.Object3D, edge: TfEdge): TfJointCalib {

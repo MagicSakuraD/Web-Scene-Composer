@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Navigation, MapPin, Send, XCircle } from 'lucide-react'
 import {
@@ -18,6 +18,7 @@ import { threeWorldPoseToRos } from '@/lib/ros/ros-three-coords'
 import { NAV_MAP_FRAME } from '@/lib/ros/nav-goal-config'
 import { foxgloveManager } from '@/lib/foxglove/client-manager'
 import { navGoalStore } from '@/lib/ros/nav-goal-store'
+import { navPathStore } from '@/lib/ros/nav-path-store'
 import { useI18n } from '@/hooks/use-i18n'
 import { cn } from '@/lib/utils'
 import type { SceneNode } from '@/lib/scene/types'
@@ -34,11 +35,24 @@ export function NavGoalPanel() {
   const [nodes, setNodes] = useAtom(sceneNodesAtom)
   const setSelected = useSetAtom(selectedNodeIdAtom)
   const selectedId = useAtomValue(selectedNodeIdAtom)
+  const planPath = useSyncExternalStore(
+    navPathStore.subscribe.bind(navPathStore),
+    () => navPathStore.planSmoothed.getSnapshot(),
+    () => navPathStore.planSmoothed.getSnapshot(),
+  )
+  const localPath = useSyncExternalStore(
+    navPathStore.subscribe.bind(navPathStore),
+    () => navPathStore.localPlan.getSnapshot(),
+    () => navPathStore.localPlan.getSnapshot(),
+  )
 
   useEffect(() => {
-    return navGoalStore.subscribe((snap) => {
+    const unsub = navGoalStore.subscribe((snap) => {
       setNavState((prev) => ({ ...prev, ...snap }))
     })
+    return () => {
+      unsub()
+    }
   }, [setNavState])
 
   const simActive = simulateStatus === 'connected'
@@ -74,6 +88,34 @@ export function NavGoalPanel() {
 
   const phaseLabel = t(`navGoal.phase.${navState.phase}` as 'navGoal.phase.idle')
 
+  const statusTone =
+    navState.phase === 'succeeded'
+      ? 'success'
+      : navState.phase === 'aborted' || navState.phase === 'failed'
+        ? 'error'
+        : navState.phase === 'canceled'
+          ? 'warn'
+          : simActive && navState.servicesReady
+            ? 'ready'
+            : simActive
+              ? 'pending'
+              : 'idle'
+
+  const statusClass = {
+    success: 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400',
+    error: 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-400',
+    warn: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    ready: 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400',
+    pending: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    idle: 'border-border bg-muted/30 text-muted-foreground',
+  }[statusTone]
+
+  const isTerminal =
+    navState.phase === 'succeeded' ||
+    navState.phase === 'canceled' ||
+    navState.phase === 'aborted' ||
+    navState.phase === 'failed'
+
   return (
     <div className="p-4 space-y-4">
       <div className="flex items-center gap-2">
@@ -89,11 +131,7 @@ export function NavGoalPanel() {
       <div
         className={cn(
           'rounded-md border px-3 py-2 text-xs flex items-center gap-2',
-          simActive && navState.servicesReady
-            ? 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400'
-            : simActive
-              ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400'
-              : 'border-border bg-muted/30 text-muted-foreground',
+          statusClass,
         )}
       >
         <MapPin className="h-3.5 w-3.5 shrink-0" />
@@ -145,14 +183,65 @@ export function NavGoalPanel() {
         <p className="text-xs text-amber-600 dark:text-amber-400">{t('navGoal.noWaypoint')}</p>
       )}
 
-      {navState.lastMessage && (
+      {navState.lastMessage && !isTerminal && (
         <p className="text-xs text-muted-foreground break-all">{navState.lastMessage}</p>
       )}
 
-      {navState.distanceRemaining != null && navState.phase === 'navigating' && (
-        <p className="text-xs font-mono">
-          {t('navGoal.distanceRemaining')}: {navState.distanceRemaining.toFixed(2)} m
+      {isTerminal && (
+        <div
+          className={cn(
+            'rounded-md border px-3 py-2 text-xs',
+            navState.phase === 'succeeded' && 'border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400',
+            navState.phase === 'canceled' && 'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+            (navState.phase === 'aborted' || navState.phase === 'failed') &&
+              'border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-400',
+          )}
+        >
+          <p className="font-medium">{phaseLabel}</p>
+          {navState.lastMessage && (
+            <p className="text-[10px] mt-0.5 opacity-90">{navState.lastMessage}</p>
+          )}
+          <p className="text-[10px] mt-1 opacity-70">{t('navGoal.resultHint')}</p>
+        </div>
+      )}
+
+      {navState.phase === 'navigating' &&
+        (navState.distanceRemaining != null || navState.recoveries != null) && (
+          <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs space-y-1">
+            <p className="text-[10px] text-muted-foreground">{t('navGoal.feedbackHint')}</p>
+            {navState.distanceRemaining != null && (
+              <p className="font-mono">
+                {t('navGoal.distanceRemaining')}: {navState.distanceRemaining.toFixed(2)} m
+              </p>
+            )}
+            {navState.recoveries != null && (
+              <p className="font-mono">
+                {t('navGoal.recoveries')}: {navState.recoveries}
+              </p>
+            )}
+          </div>
+        )}
+
+      {navState.goalStatus != null && (
+        <p className="text-[10px] font-mono text-muted-foreground">
+          status code: {navState.goalStatus}
+          {navState.phase === 'succeeded' ? ' (SUCCEEDED)' : ''}
         </p>
+      )}
+
+      {simActive && navState.servicesReady && (
+        <div className="text-[10px] font-mono text-muted-foreground space-y-0.5">
+          <p>
+            全局路径
+            {planPath.topic ? ` (${planPath.topic})` : ''}:{' '}
+            {planPath.poseCount > 0 ? `${planPath.poseCount} poses` : '—'}
+          </p>
+          <p>
+            /local_plan
+            {localPath.frameId ? ` [${localPath.frameId}]` : ''}:{' '}
+            {localPath.poseCount > 0 ? `${localPath.poseCount} poses` : '—'}
+          </p>
+        </div>
       )}
     </div>
   )

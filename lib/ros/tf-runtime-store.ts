@@ -1,4 +1,9 @@
-import { TF_WHEEL_CHILD_FRAMES, type TfWheelChildFrame } from '@/lib/ros/tf-config'
+import { TF_LIDAR_CHILD_FRAMES, TF_WHEEL_CHILD_FRAMES } from '@/lib/ros/tf-config'
+
+const TF_TRACKED_CHILD_FRAMES = new Set<string>([
+  ...TF_WHEEL_CHILD_FRAMES,
+  ...TF_LIDAR_CHILD_FRAMES,
+])
 
 export interface RosTransform {
   translation: { x: number; y: number; z: number }
@@ -41,7 +46,7 @@ class TfRuntimeStore {
     const now = performance.now()
     for (const t of transforms) {
       const child = normalizeFrameId(t.childFrame)
-      if (!TF_WHEEL_CHILD_FRAMES.includes(child as TfWheelChildFrame)) continue
+      if (!TF_TRACKED_CHILD_FRAMES.has(child)) continue
       this.edges.set(child, {
         parentFrame: normalizeFrameId(t.parentFrame),
         childFrame: child,
@@ -58,6 +63,10 @@ class TfRuntimeStore {
 
   hasWheelData(): boolean {
     return this.edges.size > 0
+  }
+
+  hasLidarData(frameId: string): boolean {
+    return this.edges.has(normalizeFrameId(frameId))
   }
 }
 

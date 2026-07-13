@@ -5,6 +5,7 @@ import { GOAL_STATUS } from '@/lib/foxglove/ros-serialization'
 export type NavGoalListener = (state: {
   phase: NavGoalPhase
   distanceRemaining: number | null
+  recoveries: number | null
   goalStatus: number | null
   lastMessage: string | null
   servicesReady: boolean
@@ -14,6 +15,7 @@ class NavGoalStore {
   private listeners = new Set<NavGoalListener>()
   phase: NavGoalPhase = 'idle'
   distanceRemaining: number | null = null
+  recoveries: number | null = null
   goalStatus: number | null = null
   lastMessage: string | null = null
   servicesReady = false
@@ -21,13 +23,16 @@ class NavGoalStore {
   subscribe(fn: NavGoalListener) {
     this.listeners.add(fn)
     fn(this.getSnapshot())
-    return () => this.listeners.delete(fn)
+    return () => {
+      this.listeners.delete(fn)
+    }
   }
 
   getSnapshot() {
     return {
       phase: this.phase,
       distanceRemaining: this.distanceRemaining,
+      recoveries: this.recoveries,
       goalStatus: this.goalStatus,
       lastMessage: this.lastMessage,
       servicesReady: this.servicesReady,
@@ -45,15 +50,34 @@ class NavGoalStore {
   }
 
   setSending(message: string) {
+    this.beginNewGoal(message)
+  }
+
+  /** 发送新导航目标：清掉上一轮 SUCCEEDED 等终态，避免 status/feedback 无法刷新 */
+  beginNewGoal(message = '正在发送导航目标…') {
     this.phase = 'sending'
+    this.goalStatus = null
+    this.distanceRemaining = null
+    this.recoveries = null
     this.lastMessage = message
     this.emit()
   }
 
   applyFeedback(feedback: NavGoalFeedback) {
     this.distanceRemaining = feedback.distanceRemaining
-    if (this.phase === 'sending' || this.phase === 'idle') {
+    this.recoveries = feedback.recoveries
+    if (
+      this.phase === 'sending' ||
+      this.phase === 'idle' ||
+      this.phase === 'succeeded' ||
+      this.phase === 'canceled' ||
+      this.phase === 'aborted'
+    ) {
+      if (this.phase === 'succeeded' || this.phase === 'canceled' || this.phase === 'aborted') {
+        this.goalStatus = null
+      }
       this.phase = 'navigating'
+      this.lastMessage = null
     }
     this.emit()
   }
@@ -64,6 +88,9 @@ class NavGoalStore {
       case GOAL_STATUS.EXECUTING:
       case GOAL_STATUS.ACCEPTED:
         this.phase = 'navigating'
+        if (this.lastMessage?.startsWith('Goal accepted')) {
+          this.lastMessage = null
+        }
         break
       case GOAL_STATUS.SUCCEEDED:
         this.phase = 'succeeded'
@@ -72,9 +99,15 @@ class NavGoalStore {
         break
       case GOAL_STATUS.CANCELED:
         this.phase = 'canceled'
+        this.lastMessage = 'Goal canceled'
         break
       case GOAL_STATUS.ABORTED:
         this.phase = 'aborted'
+        this.lastMessage = 'Goal aborted'
+        break
+      case GOAL_STATUS.CANCELING:
+        this.phase = 'navigating'
+        this.lastMessage = 'Canceling navigation…'
         break
       default:
         break
@@ -96,6 +129,7 @@ class NavGoalStore {
   resetNav() {
     this.phase = 'idle'
     this.distanceRemaining = null
+    this.recoveries = null
     this.goalStatus = null
     this.emit()
   }

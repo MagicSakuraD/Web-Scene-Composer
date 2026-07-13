@@ -11,6 +11,7 @@ import {
 } from '@/lib/ros/atoms'
 import { foxgloveManager } from '@/lib/foxglove/client-manager'
 import { lidarPointStore, type LidarCloudSnapshot } from '@/lib/ros/lidar-point-store'
+import { LIDAR_WEBGPU_FIXED_POINT_PX } from '@/lib/viewport/visual-config'
 import { cn } from '@/lib/utils'
 
 const EMPTY_TOPICS: readonly string[] = []
@@ -84,7 +85,7 @@ export function LidarViewerPanel() {
         <div>
           <h3 className="text-sm font-medium">雷达点云</h3>
           <p className="text-[10px] text-muted-foreground">
-            sensor_msgs/PointCloud2 · 3D 视口 GPU 点渲染
+            sensor_msgs/PointCloud2 · WebGPU 固定 {LIDAR_WEBGPU_FIXED_POINT_PX}px 点径
           </p>
         </div>
       </div>
@@ -181,22 +182,8 @@ export function LidarViewerPanel() {
               checked={config.followRobot}
               onChange={(e) => setConfig((c) => ({ ...c, followRobot: e.target.checked }))}
             />
-            attach 到 glTF front_RPLidar
+            attach 到机器人：优先 /tf 雷达位姿，回退 glTF link
           </label>
-        </SettingRow>
-        <SettingRow label="点大小">
-          <input
-            type="range"
-            min={0.01}
-            max={0.15}
-            step={0.005}
-            value={config.pointSize}
-            className="w-full"
-            onChange={(e) =>
-              setConfig((c) => ({ ...c, pointSize: parseFloat(e.target.value) }))
-            }
-          />
-          <span className="text-[10px] text-muted-foreground ml-2">{config.pointSize.toFixed(3)}</span>
         </SettingRow>
         <SettingRow label="着色">
           <select
@@ -223,45 +210,6 @@ export function LidarViewerPanel() {
             />
           </SettingRow>
         )}
-        {config.colorMode === 'turbo' && (
-          <>
-            <SettingRow label="高度范围">
-              <span className="text-[10px] font-mono text-muted-foreground">
-                自动 {snapshot.heightMin.toFixed(2)} ~ {snapshot.heightMax.toFixed(2)} m
-              </span>
-            </SettingRow>
-            <SettingRow label="Min Y (m)">
-              <input
-                type="number"
-                step={0.1}
-                placeholder="自动"
-                value={config.heightMin ?? ''}
-                className="w-full bg-input border border-border rounded px-2 py-1 text-xs"
-                onChange={(e) =>
-                  setConfig((c) => ({
-                    ...c,
-                    heightMin: e.target.value === '' ? null : parseFloat(e.target.value),
-                  }))
-                }
-              />
-            </SettingRow>
-            <SettingRow label="Max Y (m)">
-              <input
-                type="number"
-                step={0.1}
-                placeholder="自动"
-                value={config.heightMax ?? ''}
-                className="w-full bg-input border border-border rounded px-2 py-1 text-xs"
-                onChange={(e) =>
-                  setConfig((c) => ({
-                    ...c,
-                    heightMax: e.target.value === '' ? null : parseFloat(e.target.value),
-                  }))
-                }
-              />
-            </SettingRow>
-          </>
-        )}
         <SettingRow label="透明度">
           <input
             type="range"
@@ -275,23 +223,13 @@ export function LidarViewerPanel() {
             }
           />
         </SettingRow>
-        <SettingRow label="近大远小">
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={config.sizeAttenuation}
-              onChange={(e) =>
-                setConfig((c) => ({ ...c, sizeAttenuation: e.target.checked }))
-              }
-            />
-            sizeAttenuation
-          </label>
-        </SettingRow>
+        {/* 绕 X / Y 外参已固定：X=+90°（Isaac XT_32），Y=0；不再暴露面板调节 */}
       </div>
 
       <p className="text-[10px] text-muted-foreground leading-relaxed">
-        Turbo 色图在顶点着色器内按 Three.js Y（高度）计算，与 Foxglove 同类方案；min/max
-        在坐标转换同一遍循环里统计，无额外 CPU 设色。留空高度范围为自动。
+        WebGPU 下点径不可调。Turbo 色图按每帧点云高度自动映射。
+        点云 frame_id 为 front_3d_lidar，挂载场景节点 chassis_link/sensors/XT_32（对应 PandarXT_32_10hz）。
+        无 XT_32 节点时回退 /tf（base_link→front_3d_lidar）。
       </p>
     </div>
   )

@@ -25,6 +25,7 @@ import { transformGizmoState } from '@/lib/viewport/transform-gizmo-state'
 import { SelectionOutline } from './selection-outline'
 import { RuntimeRobotSync } from './runtime-robot-sync'
 import { LidarPointCloud } from './lidar-point-cloud'
+import { NavPathLines } from './nav-path-lines'
 import { MaterialGraphSync } from './material-graph-sync'
 import { ViewportSceneHelpers } from './viewport-scene-helpers'
 import { PhysicalDistantLightNode } from './physical-distant-light-node'
@@ -252,6 +253,7 @@ export function SceneRenderer() {
       <ViewportSceneHelpers />
       <RuntimeRobotSync />
       {VIEWPORT_WEBGPU_FEATURES.lidarPointCloud ? <LidarPointCloud /> : null}
+      <NavPathLines />
       {VIEWPORT_WEBGPU_FEATURES.materialGraph ? <MaterialGraphSync /> : null}
       {tree.map((node) => (
         <SceneNodeObject key={node.id} node={node} />

@@ -1,4 +1,5 @@
 import { atom } from 'jotai'
+import { LIDAR_ISAAC_3D_EXTRA_ROTATION_X } from '@/lib/ros/lidar-config'
 import { VIEWPORT_WEBGPU_FEATURES } from '@/lib/viewport/visual-config'
 
 export type SimulateStatus = 'idle' | 'connecting' | 'connected' | 'error'
@@ -88,35 +89,31 @@ export const DEFAULT_LIDAR_TOPIC = '/front_3d_lidar/lidar_points'
 
 export type LidarColorMode = 'turbo' | 'solid'
 
+export { LIDAR_ISAAC_3D_EXTRA_ROTATION_X } from '@/lib/ros/lidar-config'
+
 export interface LidarDisplayConfig {
-  /** 在 3D 视口显示点云 */
   visible: boolean
   topic: string
-  pointSize: number
   color: string
   opacity: number
-  sizeAttenuation: boolean
-  /** 挂载到 glTF 雷达节点 front_RPLidar（静态外参，不订 /tf） */
+  /** attach 到机器人：优先 /tf 雷达位姿，回退 glTF link */
   followRobot: boolean
-  /** turbo：GPU 高度渐变色；solid：单色 */
   colorMode: LidarColorMode
-  /** 手动高度下界（null = 每帧自动） */
-  heightMin: number | null
-  /** 手动高度上界（null = 每帧自动） */
-  heightMax: number | null
+  /** 点云局部绕 X 轴额外旋转（弧度）；Isaac 3D 雷达默认 +π/2 */
+  extraRotationX: number
+  /** 点云局部绕 Y 轴额外旋转（弧度）；仓库整体朝向偏差时可微调（如 π） */
+  extraRotationY: number
 }
 
 export const lidarDisplayAtom = atom<LidarDisplayConfig>({
   visible: true,
   topic: DEFAULT_LIDAR_TOPIC,
-  pointSize: 0.04,
   color: '#00ffcc',
   opacity: 0.85,
-  sizeAttenuation: true,
   followRobot: true,
   colorMode: 'turbo',
-  heightMin: null,
-  heightMax: null,
+  extraRotationX: LIDAR_ISAAC_3D_EXTRA_ROTATION_X,
+  extraRotationY: 0,
 })
 
 export type NavGoalPhase = 'idle' | 'sending' | 'navigating' | 'succeeded' | 'canceled' | 'aborted' | 'failed'
@@ -126,6 +123,7 @@ export interface NavGoalState {
   waypointNodeId: string | null
   lastMessage: string | null
   distanceRemaining: number | null
+  recoveries: number | null
   goalStatus: number | null
   servicesReady: boolean
 }
@@ -135,6 +133,7 @@ export const navGoalStateAtom = atom<NavGoalState>({
   waypointNodeId: null,
   lastMessage: null,
   distanceRemaining: null,
+  recoveries: null,
   goalStatus: null,
   servicesReady: false,
 })

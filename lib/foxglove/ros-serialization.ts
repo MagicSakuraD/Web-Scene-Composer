@@ -442,8 +442,12 @@ export function decodePointCloud2(data: Uint8Array): DecodedPointCloud | null {
 }
 
 export function isLidarPointCloudTopic(topic: string, schemaName?: string): boolean {
-  if (schemaName?.includes('PointCloud2')) return true
-  return /lidar|point_cloud|\/points$/i.test(topic)
+  if (schemaName) {
+    return schemaName.includes('PointCloud2')
+  }
+  // 无 schema 时保守匹配，排除 costmap / occupancy 等非点云话题
+  if (/costmap|occupancy|CostmapUpdate|_layer$/i.test(topic)) return false
+  return /lidar|point_cloud|\/points$|cost_cloud/i.test(topic)
 }
 
 const poseStampedDefs = [
@@ -565,31 +569,11 @@ export function decodeNavGoalFeedback(data: Uint8Array): NavGoalFeedback | null 
 }
 
 const navStatusDefs = [
-  {
-    name: 'action_msgs/msg/GoalStatusArray',
-    definitions: [
-      { name: 'status_list', type: 'action_msgs/GoalStatus', isArray: true },
-    ],
-  },
-  {
-    name: 'action_msgs/GoalStatus',
-    definitions: [
-      { name: 'goal_info', type: 'action_msgs/GoalInfo', isComplex: true },
-      { name: 'status', type: 'int8' },
-    ],
-  },
-  {
-    name: 'action_msgs/GoalInfo',
-    definitions: [
-      { name: 'goal_id', type: 'unique_identifier_msgs/UUID', isComplex: true },
-      { name: 'stamp', type: 'builtin_interfaces/Time', isComplex: true },
-    ],
-  },
-  {
-    name: 'unique_identifier_msgs/UUID',
-    definitions: [{ name: 'uuid', type: 'uint8', isArray: true, arrayLength: 16 }],
-  },
-  ros2humble['builtin_interfaces/Time'],
+  ros2msgs['action_msgs/GoalStatusArray'],
+  ros2msgs['action_msgs/GoalStatus'],
+  ros2msgs['action_msgs/GoalInfo'],
+  ros2msgs['unique_identifier_msgs/UUID'],
+  ros2msgs['builtin_interfaces/Time'],
 ]
 
 const navStatusReader = new MessageReader(navStatusDefs)
@@ -605,12 +589,35 @@ export const GOAL_STATUS = {
   ABORTED: 6,
 } as const
 
+let navStatusDecodeFailLogged = false
+
 export function decodeNavGoalStatus(data: Uint8Array): number | null {
   try {
-    const msg = navStatusReader.readMessage<{ status_list: { status: number }[] }>(data)
-    const latest = msg.status_list[msg.status_list.length - 1]
-    return latest?.status ?? null
-  } catch {
+    const msg = navStatusReader.readMessage<{
+      status_list: Array<{ status: number; goal_info: { stamp: { sec: number; nanosec: number } } }>
+    }>(data)
+    if (!msg.status_list?.length) return null
+
+    // 取 stamp 最新的一条（新 goal 会更新 stamp；勿优先旧 SUCCEEDED）
+    let best = msg.status_list[0]
+    let bestStamp = best.goal_info.stamp.sec * 1e9 + best.goal_info.stamp.nanosec
+    for (let i = 1; i < msg.status_list.length; i++) {
+      const entry = msg.status_list[i]
+      const entryStamp = entry.goal_info.stamp.sec * 1e9 + entry.goal_info.stamp.nanosec
+      if (entryStamp >= bestStamp) {
+        best = entry
+        bestStamp = entryStamp
+      }
+    }
+    return best?.status ?? null
+  } catch (err) {
+    if (!navStatusDecodeFailLogged) {
+      navStatusDecodeFailLogged = true
+      console.warn('[NavGoal] decodeNavGoalStatus CDR 失败（jazzy action_msgs）', {
+        byteLength: data.byteLength,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
     return null
   }
 }
@@ -677,6 +684,42 @@ export function decodeTfMessage(data: Uint8Array): DecodedTfTransform[] | null {
         err: err instanceof Error ? err.message : String(err),
       })
     }
+    return null
+  }
+}
+
+const pathDefs = [
+  ros2msgs['nav_msgs/Path'],
+  ros2msgs['std_msgs/Header'],
+  ros2msgs['builtin_interfaces/Time'],
+  ros2msgs['geometry_msgs/PoseStamped'],
+  ros2msgs['geometry_msgs/Pose'],
+  ros2msgs['geometry_msgs/Point'],
+  ros2msgs['geometry_msgs/Quaternion'],
+]
+
+const pathReader = new MessageReader(pathDefs)
+
+export interface DecodedNavPath {
+  frameId: string
+  poses: { x: number; y: number; z: number }[]
+}
+
+/** nav_msgs/msg/Path — jazzy_ws / Isaac Sim */
+export function decodeNavPath(data: Uint8Array): DecodedNavPath | null {
+  try {
+    const msg = pathReader.readMessage<{
+      header: { frame_id: string }
+      poses: Array<{
+        pose: { position: { x: number; y: number; z: number } }
+      }>
+    }>(data)
+    if (!msg.poses?.length) return null
+    return {
+      frameId: msg.header.frame_id,
+      poses: msg.poses.map((p) => p.pose.position),
+    }
+  } catch {
     return null
   }
 }
