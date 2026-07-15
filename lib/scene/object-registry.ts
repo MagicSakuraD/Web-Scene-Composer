@@ -39,7 +39,30 @@ export function registerHighlightMeshes(nodeId: string, root: THREE.Object3D) {
   highlightMeshesByNodeId.set(nodeId, collectHighlightMeshes(root))
 }
 
-export function resolvePickedNodeId(object: THREE.Object3D): string | null {
+/**
+ * 射线拾取 → 场景节点 id。
+ * InstancedMesh 命中时用 intersection.instanceId 映射到被实例化前的 prim。
+ */
+export function resolvePickedNodeId(
+  object: THREE.Object3D,
+  instanceId?: number,
+): string | null {
+  if (
+    object instanceof THREE.InstancedMesh &&
+    instanceId != null &&
+    instanceId >= 0
+  ) {
+    const ids = object.userData.instanceSceneNodeIds as Array<string | undefined> | undefined
+    const sid = ids?.[instanceId]
+    if (typeof sid === 'string') return sid
+
+    const proxies = object.userData.instanceProxies as THREE.Object3D[] | undefined
+    const proxy = proxies?.[instanceId]
+    if (proxy && typeof proxy.userData.sceneNodeId === 'string') {
+      return proxy.userData.sceneNodeId
+    }
+  }
+
   let current: THREE.Object3D | null = object
   while (current) {
     if (current.userData.ignorePick) {

@@ -1,6 +1,10 @@
 import { MeshPhysicalNodeMaterial } from 'three/webgpu'
-import { add, color, float, mix, mul } from 'three/tsl'
+import { add, color, float, mix, mul, texture, uv } from 'three/tsl'
 import type { MaterialGraph, MaterialGraphNode } from './types'
+import { getMaterialGraphTexture } from './texture-cache'
+
+/** 颜色/贴图混合链路的 TSL 节点 */
+type ShaderColorNode = ReturnType<typeof color> | ReturnType<typeof texture>
 
 function getInputNode(
   graph: MaterialGraph,
@@ -12,12 +16,16 @@ function getInputNode(
   return graph.nodes.find((n) => n.id === edge.from.nodeId) ?? null
 }
 
-function compileColorNode(node: MaterialGraphNode, graph: MaterialGraph): ReturnType<typeof color> {
+function compileColorNode(node: MaterialGraphNode, graph: MaterialGraph): ShaderColorNode {
   switch (node.type) {
     case 'color':
       return color(String(node.data.hex ?? '#ffffff'))
-    case 'texture':
+    case 'texture': {
+      const imageUrl = String(node.data.imageUrl ?? '')
+      const loaded = imageUrl ? getMaterialGraphTexture(imageUrl) : null
+      if (loaded) return texture(loaded, uv())
       return color(String(node.data.fallbackHex ?? '#cccccc'))
+    }
     case 'uv':
       return color('#808080')
     case 'multiply': {
@@ -72,7 +80,7 @@ function resolveColorInput(
   principledId: string,
   portId: string,
   fallbackHex: string,
-): ReturnType<typeof color> {
+): ShaderColorNode {
   const input = getInputNode(graph, principledId, portId)
   if (input) return compileColorNode(input, graph)
   return color(fallbackHex)

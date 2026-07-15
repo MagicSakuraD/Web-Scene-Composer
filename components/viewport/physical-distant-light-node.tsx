@@ -14,6 +14,7 @@ export function PhysicalDistantLightNode({ node }: { node: SceneNode }) {
   const [lx, ly, lz] = node.transform.position
   const color = node.lightColor ?? cfg.color
   const intensity = node.lightIntensity ?? cfg.intensity
+  const castShadow = cfg.castShadow
 
   useLayoutEffect(() => {
     const light = lightRef.current
@@ -23,7 +24,6 @@ export function PhysicalDistantLightNode({ node }: { node: SceneNode }) {
 
   return (
     <>
-      {/* 照射目标（世界坐标固定，转为相对光源的局部偏移） */}
       <object3D
         ref={targetRef}
         position={[tx - lx, ty - ly, tz - lz]}
@@ -33,7 +33,7 @@ export function PhysicalDistantLightNode({ node }: { node: SceneNode }) {
         ref={lightRef}
         color={color}
         intensity={intensity}
-        castShadow
+        castShadow={castShadow}
         shadow-mapSize={cfg.shadowMapSize}
         shadow-bias={cfg.shadowBias}
         shadow-normalBias={cfg.shadowNormalBias}
@@ -43,7 +43,6 @@ export function PhysicalDistantLightNode({ node }: { node: SceneNode }) {
         shadow-camera-top={cfg.shadowCameraSize}
         shadow-camera-bottom={-cfg.shadowCameraSize}
       />
-      {/* 光源位置指示（可随 Move Gizmo 拖动） */}
       <mesh userData={{ ignorePick: true }}>
         <sphereGeometry args={[0.15, 16, 16]} />
         <meshStandardMaterial

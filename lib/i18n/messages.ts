@@ -93,6 +93,10 @@ const zh = {
   'materialGraph.category.math': '运算',
   'materialGraph.category.shader': '着色器',
   'materialGraph.category.output': '输出',
+  'materialGraph.texture.upload': '上传贴图',
+  'materialGraph.texture.replace': '更换',
+  'materialGraph.texture.clear': '清除',
+  'materialGraph.texture.fallback': '无贴图时',
   'materialGraph.hint':
     'Outputs「Custom Surface」连线完成后自动应用到选中 mesh（Blender 习惯）。Delete 可删节点（Outputs 不可删）。MeshPhysicalNodeMaterial 支持 Base Color / Roughness / Metallic / Emissive / Normal / Opacity / Transmission / Clearcoat / IOR。',
   'projectBrowser.assets': '资源',
@@ -220,6 +224,10 @@ const en: Record<keyof typeof zh, string> = {
   'materialGraph.category.math': 'Math',
   'materialGraph.category.shader': 'Shader',
   'materialGraph.category.output': 'Output',
+  'materialGraph.texture.upload': 'Upload image',
+  'materialGraph.texture.replace': 'Replace',
+  'materialGraph.texture.clear': 'Clear',
+  'materialGraph.texture.fallback': 'If empty',
   'materialGraph.hint':
     'When Outputs「Custom Surface」is wired, the material applies automatically to the selected mesh (Blender-style). Delete removes nodes (Outputs is protected). MeshPhysicalNodeMaterial: Base Color, Roughness, Metallic, Emissive, Normal, Opacity, Transmission, Clearcoat, IOR.',
   'projectBrowser.assets': 'Assets',

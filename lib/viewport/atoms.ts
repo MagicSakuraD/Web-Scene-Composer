@@ -9,9 +9,8 @@ export const viewportDefaultLightsVisibleAtom = atom(true)
 import type { ViewportRenderQuality } from '@/lib/viewport/visual-config'
 
 /**
- * 后处理 / HDRI 质量档位（默认 balanced）。
- * performance：N8AO low + 低 Bloom + 无 MSAA。
- * balanced：N8AO medium + 适中 Bloom + MSAA×4。
+ * 后处理质量档位（需 VIEWPORT_WEBGPU_FEATURES.postProcessing === true）。
+ * 当前仅驱动轻量 Bloom；N8AO 在预设中保持 null。
  */
 export type { ViewportRenderQuality }
-export const viewportRenderQualityAtom = atom<ViewportRenderQuality>('balanced')
+export const viewportRenderQualityAtom = atom<ViewportRenderQuality>('performance')

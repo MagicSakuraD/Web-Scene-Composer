@@ -192,10 +192,11 @@ export function LidarViewerPanel() {
             onChange={(e) =>
               setConfig((c) => ({
                 ...c,
-                colorMode: e.target.value as 'turbo' | 'solid',
+                colorMode: e.target.value as 'distance' | 'turbo' | 'solid',
               }))
             }
           >
+            <option value="distance">距离彩虹 (GPU)</option>
             <option value="turbo">Turbo 高度渐变 (GPU)</option>
             <option value="solid">单色</option>
           </select>
@@ -227,8 +228,8 @@ export function LidarViewerPanel() {
       </div>
 
       <p className="text-[10px] text-muted-foreground leading-relaxed">
-        WebGPU 下点径不可调。Turbo 色图按每帧点云高度自动映射。
-        点云 frame_id 为 front_3d_lidar，挂载场景节点 chassis_link/sensors/XT_32（对应 PandarXT_32_10hz）。
+        WebGPU 下点径不可调。距离彩虹按到传感器距离自动映射（近红远青）；Turbo 按高度。
+        点云 frame_id 为 front_3d_lidar，挂载场景节点 chassis_link/sensors/XT_32。
         无 XT_32 节点时回退 /tf（base_link→front_3d_lidar）。
       </p>
     </div>

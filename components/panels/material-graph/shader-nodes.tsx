@@ -1,6 +1,6 @@
 'use client'
 
-import { useContext } from 'react'
+import { useContext, useRef } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import {
   Box,
@@ -12,11 +12,19 @@ import {
   Grid3x3,
   Hash,
   Blend,
+  ImagePlus,
+  X,
 } from 'lucide-react'
 import type { MaterialGraphNodeType } from '@/lib/material-graph/types'
 import { NODE_PORTS } from '@/lib/material-graph/types'
 import type { ShaderFlowNodeData } from '@/lib/material-graph/flow-adapters'
+import {
+  preloadMaterialGraphTexture,
+  releaseMaterialGraphTexture,
+  revokeMaterialGraphBlobUrl,
+} from '@/lib/material-graph/texture-cache'
 import { MaterialGraphFlowContext } from './flow-context'
+import { useI18n } from '@/hooks/use-i18n'
 import { cn } from '@/lib/utils'
 
 function accentClass(nodeType: MaterialGraphNodeType) {
@@ -155,16 +163,108 @@ function PropertyRow({ label, children }: { label: string; children: React.React
 }
 
 export function ShaderTextureNode({ id, data }: NodeProps<ShaderFlowNodeData>) {
+  const { t } = useI18n()
   const { onNodeDataChange } = useMaterialGraphFlowSafe()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const imageUrl = String(data.imageUrl ?? '')
+  const fileName = String(data.fileName ?? '')
+  const fallbackHex = String(data.fallbackHex ?? '#8a9a7a')
+  const hasImage = imageUrl.length > 0
+
+  const replaceTexture = async (file: File) => {
+    const nextUrl = URL.createObjectURL(file)
+    try {
+      await preloadMaterialGraphTexture(nextUrl)
+    } catch {
+      revokeMaterialGraphBlobUrl(nextUrl)
+      return
+    }
+
+    if (imageUrl) {
+      releaseMaterialGraphTexture(imageUrl)
+      revokeMaterialGraphBlobUrl(imageUrl)
+    }
+
+    onNodeDataChange(id, {
+      imageUrl: nextUrl,
+      fileName: file.name,
+      label: file.name,
+    })
+  }
+
+  const clearTexture = () => {
+    if (!imageUrl) return
+    releaseMaterialGraphTexture(imageUrl)
+    revokeMaterialGraphBlobUrl(imageUrl)
+    onNodeDataChange(id, { imageUrl: '', fileName: '', label: 'Albedo Map' })
+  }
+
   return (
     <ShaderNodeShell nodeType="texture" title={data.title}>
-      <PropertyRow label="Map">
-        <span className="text-[11px] truncate max-w-[7rem]">{String(data.label ?? 'Albedo Map')}</span>
-      </PropertyRow>
-      <PropertyRow label="Fallback">
+      <div className="flex gap-2.5 nodrag nopan nowheel">
+        <button
+          type="button"
+          className="relative shrink-0 w-16 h-16 rounded-md border border-[var(--shader-graph-node-border)] overflow-hidden bg-[var(--shader-graph-value-input-bg)] hover:ring-2 hover:ring-[var(--shader-graph-accent-purple)]/40 transition-shadow"
+          title={hasImage ? t('materialGraph.texture.replace') : t('materialGraph.texture.upload')}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {hasImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center gap-0.5">
+              <div className="w-8 h-8 rounded" style={{ backgroundColor: fallbackHex }} />
+              <ImagePlus className="h-3.5 w-3.5 shader-graph-property-label" />
+            </div>
+          )}
+        </button>
+
+        <div className="min-w-0 flex-1 flex flex-col justify-center gap-1.5">
+          <p className="text-[11px] truncate font-medium">
+            {fileName || String(data.label ?? 'Albedo Map')}
+          </p>
+          <div className="flex flex-wrap gap-1">
+            <button
+              type="button"
+              className="px-1.5 py-0.5 rounded text-[10px] shader-graph-value-input hover:opacity-90"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {hasImage ? t('materialGraph.texture.replace') : t('materialGraph.texture.upload')}
+            </button>
+            {hasImage && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] shader-graph-value-input hover:opacity-90"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={clearTexture}
+              >
+                <X className="h-3 w-3" />
+                {t('materialGraph.texture.clear')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''
+            if (file) void replaceTexture(file)
+          }}
+        />
+      </div>
+
+      <PropertyRow label={t('materialGraph.texture.fallback')}>
         <input
           type="color"
-          value={String(data.fallbackHex ?? '#8a9a7a')}
+          value={fallbackHex}
           className="h-5 w-8 rounded border border-[var(--shader-graph-node-border)] cursor-pointer bg-transparent"
           onChange={(e) => onNodeDataChange(id, { fallbackHex: e.target.value })}
         />

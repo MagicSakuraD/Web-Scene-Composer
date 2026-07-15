@@ -36,6 +36,21 @@ pnpm install && pnpm dev
 
 ## 与 Isaac Sim 联调
 
+完整 **Windows 六终端启动顺序**（Zenoh → Isaac Sim → Foxglove → Nav2 → 本桥接 → `npm run dev`）见：
+
+**[ros/carter_web_nav_bridge/README.md](ros/carter_web_nav_bridge/README.md)**
+
+### 快速检查清单
+
+| 终端 | 命令（`jazzy_ws` 目录） |
+|------|-------------------------|
+| 1 | `pixi run zenoh` |
+| 2 | `ros2 launch isaacsim_bringup run_isaacsim.launch.py install_path:=C:/isaacsim-6.0.1` → **Play** |
+| 3 | `pixi run ros2 run foxglove_bridge foxglove_bridge --ros-args -p include_hidden:=true` |
+| 4 | `ros2 launch carter_navigation carter_navigation.launch.py use_rviz:=False` |
+| 5 | `ros2 launch carter_web_nav_bridge web_nav_bridge.launch.py` |
+| 6 | `cd Web-Scene-Composer` → `npm run dev` → 浏览器 **Simulate** |
+
 ### 1. 启动仿真并确认 ROS 2 话题
 
 在 Isaac Sim 的 ROS 2 workspace（示例：`jazzy_ws`）中确认话题已发布：
@@ -61,32 +76,29 @@ ros2 topic list
 | `/left_stereo_imu/imu` | IMU | — |
 | `/right_stereo_imu/imu` | IMU | — |
 | `/tf` | TF 树 | **Simulate** 订阅，驱动轮子 / 万向轮关节 |
-| `/rosout` | 日志 | 控制台面板 |
+| `/plan` / `/plan_smoothed` | `nav_msgs/Path` | **Nav Goal** 全局路径（视口） |
+| `/local_plan` | `nav_msgs/Path` | **Nav Goal** 局部路径（视口） |
+| `/navigate_to_pose/_action/feedback` | action feedback | **Nav Goal** 剩余距离（hidden） |
+| `/navigate_to_pose/_action/status` | action status | **Nav Goal** 导航状态（hidden） |
 | `/parameter_events` | 参数事件 | — |
 
 > 若相机话题为 `image_raw`（非 `compressed`），请在底部 **摄像头画面** 面板中添加对应话题；代码内默认示例为 `image_raw/compressed`，与当前 Isaac Sim 输出可能不一致。
 
-### 2. 启动 Foxglove Bridge
+### 2. Foxglove Bridge 与导航桥接
 
-在同一 ROS 2 环境中运行（默认监听 **8765** 端口）：
+须与 Zenoh、Nav2、本桥接节点一并启动，详见 [ros/carter_web_nav_bridge/README.md](ros/carter_web_nav_bridge/README.md)。
+
+Foxglove（终端 3）：
 
 ```powershell
-ros2 run foxglove_bridge foxglove_bridge --ros-args -p include_hidden:=true
+pixi run ros2 run foxglove_bridge foxglove_bridge --ros-args -p include_hidden:=true
 ```
 
-成功启动后应看到类似日志：
+导航 Service 桥接（终端 5）：
 
+```powershell
+ros2 launch carter_web_nav_bridge web_nav_bridge.launch.py
 ```
-[INFO] [foxglove_bridge]: Server listening on port 8765
-[INFO] [foxglove_bridge]: Advertising channel 39 for topic /navigate_to_pose/_action/feedback
-...
-```
-
-> **Nav2 导航面板**：还需启动桥接节点（见 `ros/carter_web_nav_bridge/README.md`）：
->
-> ```powershell
-> ros2 launch carter_web_nav_bridge web_nav_bridge.launch.py
-> ```
 
 Web 端连接地址（见 `lib/ros/foxglove-config.ts`）：
 

@@ -29,6 +29,8 @@ import { NavPathLines } from './nav-path-lines'
 import { MaterialGraphSync } from './material-graph-sync'
 import { ViewportSceneHelpers } from './viewport-scene-helpers'
 import { PhysicalDistantLightNode } from './physical-distant-light-node'
+import { AutoInstancedSync } from './auto-instanced-sync'
+import { NavigationArrowModel } from './navigation-arrow-model'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
 import { VIEWPORT_WEBGPU_FEATURES } from '@/lib/viewport/visual-config'
 
@@ -46,6 +48,7 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
   const { scene } = useGLTF(url)
   const clone = useMemo(() => {
     const c = scene.clone(true)
+    // 先打 sceneNodeId，再增强（含 auto-instance）：proxy 会继承 tag
     tagGltfSceneNodeIds(c, assetRootId)
     enhanceGltfScene(c)
     return c
@@ -55,7 +58,10 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
     clone.traverse((obj) => {
       if (typeof obj.userData.sceneNodeId === 'string') {
         registerSceneObject(obj.userData.sceneNodeId, obj)
-        registerHighlightMeshes(obj.userData.sceneNodeId, obj)
+        // 实例化后的 proxy 无 Mesh，高亮挂在整个 asset 上即可
+        if (!(obj.userData.demotedFromMesh && obj.userData.autoInstancedMesh)) {
+          registerHighlightMeshes(obj.userData.sceneNodeId, obj)
+        }
       }
     })
     registerHighlightMeshes(assetRootId, clone)
@@ -69,7 +75,12 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
     }
   }, [clone, assetRootId])
 
-  return <primitive object={clone} userData={{ sceneRootId: assetRootId }} />
+  return (
+    <>
+      <primitive object={clone} userData={{ sceneRootId: assetRootId }} />
+      <AutoInstancedSync root={clone} />
+    </>
+  )
 }
 
 function SceneNodeObject({ node }: { node: SceneTreeNode }) {
@@ -135,30 +146,23 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
         )
       case 'cube':
         return (
-          <mesh castShadow receiveShadow>
+          <mesh>
             <boxGeometry args={[1, 1, 1]} />
             <meshStandardMaterial color="#7d9ec8" />
           </mesh>
         )
       case 'sphere':
         return (
-          <mesh castShadow receiveShadow>
+          <mesh>
             <sphereGeometry args={[0.5, 32, 32]} />
             <meshStandardMaterial color="#e8e8e8" />
           </mesh>
         )
       case 'nav-waypoint':
         return (
-          <group>
-            <mesh position={[0, 0.08, 0]} castShadow>
-              <cylinderGeometry args={[0.12, 0.12, 0.06, 16]} />
-              <meshStandardMaterial color="#22c55e" emissive="#14532d" emissiveIntensity={0.4} />
-            </mesh>
-            <mesh position={[0.28, 0.12, 0]} rotation={[0, 0, -Math.PI / 2]} castShadow>
-              <coneGeometry args={[0.1, 0.35, 16]} />
-              <meshStandardMaterial color="#4ade80" emissive="#166534" emissiveIntensity={0.5} />
-            </mesh>
-          </group>
+          <Suspense fallback={null}>
+            <NavigationArrowModel />
+          </Suspense>
         )
       case 'distant-light':
         return (

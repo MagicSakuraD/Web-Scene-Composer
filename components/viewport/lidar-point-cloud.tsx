@@ -12,6 +12,7 @@ import {
 } from '@/lib/ros/lidar-point-store'
 import {
   createLidarTslMaterial,
+  colorModeToGradientMode,
   setLidarSolidColor,
   type LidarTslUniforms,
 } from '@/lib/ros/lidar-tsl-material'
@@ -111,10 +112,14 @@ function updateLidarUniforms(
   solidScratch: THREE.Color,
 ) {
   uniforms.uOpacity.value = config.opacity
-  uniforms.uUseGradient.value = config.colorMode === 'turbo' ? 1 : 0
+  uniforms.uGradientMode.value = colorModeToGradientMode(
+    config.colorMode as 'distance' | 'turbo' | 'solid',
+  )
   setLidarSolidColor(uniforms, config.color, solidScratch)
 
   uniforms.uMinY.value = lidarPointStore.heightMin
   uniforms.uMaxY.value = lidarPointStore.heightMax
+  uniforms.uMinDist.value = lidarPointStore.distMin
+  uniforms.uMaxDist.value = lidarPointStore.distMax
   uniforms.uEmissiveBoost.value = 1
 }

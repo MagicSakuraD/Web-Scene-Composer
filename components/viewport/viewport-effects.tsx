@@ -7,8 +7,8 @@ import { viewportDefaultLightsVisibleAtom } from '@/lib/viewport/atoms'
 import { ROOM_IBL_CONFIG, VIEWPORT_WEBGPU_FEATURES } from '@/lib/viewport/visual-config'
 
 /**
- * Sun 按钮开启：drei Environment IBL（HDRI + PMREM）。
- * preset 见 ROOM_IBL_CONFIG（当前 studio；无 preset="room"）。
+ * Sun 按钮开启：本地 HDR → drei Environment（PMREM IBL）。
+ * 不用 CDN preset，避免联网与额外带宽。
  */
 export function ViewportEffects() {
   const enabled = useAtomValue(viewportDefaultLightsVisibleAtom)
@@ -17,15 +17,11 @@ export function ViewportEffects() {
   return (
     <Suspense fallback={null}>
       <Environment
-        preset={ROOM_IBL_CONFIG.preset}
+        files={ROOM_IBL_CONFIG.files}
+        resolution={ROOM_IBL_CONFIG.resolution}
         background={ROOM_IBL_CONFIG.background}
         environmentIntensity={ROOM_IBL_CONFIG.environmentIntensity}
       />
     </Suspense>
   )
 }
-
-// ── 旧方案（Physical Lights / warehouse HDRI）────────────────────────────
-// import { ViewportPhysicalLights } from './viewport-physical-lights'
-// <Environment preset="warehouse" ... />
-// Reinhard + distantLight + hemisphere

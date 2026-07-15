@@ -32,7 +32,7 @@ export function ViewportPicker() {
       const hits = _raycaster.intersectObjects(scene.children, true)
 
       for (const hit of hits) {
-        const nodeId = resolvePickedNodeId(hit.object)
+        const nodeId = resolvePickedNodeId(hit.object, hit.instanceId)
         if (nodeId) {
           setSelected(nodeId)
           bumpObjectReady((n) => n + 1)

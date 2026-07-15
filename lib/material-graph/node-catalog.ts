@@ -22,7 +22,7 @@ export const NODE_DEFINITIONS: Record<MaterialGraphNodeType, NodeDefinition> = {
     type: 'texture',
     title: 'Image Texture',
     category: 'input',
-    defaultData: { label: 'Albedo Map', fallbackHex: '#8a9a7a' },
+    defaultData: { label: 'Albedo Map', fallbackHex: '#8a9a7a', imageUrl: '', fileName: '' },
   },
   float: {
     type: 'float',

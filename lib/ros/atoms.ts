@@ -87,7 +87,7 @@ export const cameraViewerTopicsAtom = atom<string[]>([])
 
 export const DEFAULT_LIDAR_TOPIC = '/front_3d_lidar/lidar_points'
 
-export type LidarColorMode = 'turbo' | 'solid'
+export type LidarColorMode = 'distance' | 'turbo' | 'solid'
 
 export { LIDAR_ISAAC_3D_EXTRA_ROTATION_X } from '@/lib/ros/lidar-config'
 
@@ -111,7 +111,7 @@ export const lidarDisplayAtom = atom<LidarDisplayConfig>({
   color: '#00ffcc',
   opacity: 0.85,
   followRobot: true,
-  colorMode: 'turbo',
+  colorMode: 'distance',
   extraRotationX: LIDAR_ISAAC_3D_EXTRA_ROTATION_X,
   extraRotationY: 0,
 })
