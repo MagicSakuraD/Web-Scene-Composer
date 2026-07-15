@@ -76,10 +76,10 @@ export const activeBottomTabIdAtom = atom<string>('project-browser')
 /** 可添加的底部面板类型（文案见 lib/i18n/panel-messages.ts） */
 export { ADDABLE_PANEL_TYPES } from '@/lib/i18n/panel-messages'
 
-/** Nova Carter 默认压缩相机话题（image_transport） */
+/** Nova Carter / Isaac Sim H.264 compressed 默认话题 */
 export const DEFAULT_CAMERA_COMPRESSED_TOPICS = [
   '/front_stereo_camera/left/image_raw/compressed',
-  '/front_stereo_camera/right/image_raw/compressed',
+  '/right_stereo_camera/right/image_raw/compressed',
 ] as const
 
 /** 摄像头面板当前选中的 ROS 图像话题 */

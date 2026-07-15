@@ -6,7 +6,7 @@ import { simulateStatusAtom } from '@/lib/ros/atoms'
 import { foxgloveManager } from '@/lib/foxglove/client-manager'
 import { cameraFrameStore } from '@/lib/ros/camera-frame-store'
 
-/** 摄像头面板：按选中话题订阅 image_raw，写入 cameraFrameStore */
+/** 摄像头面板：按选中话题订阅 H.264 CompressedImage，写入 cameraFrameStore */
 export function useCameraViewer(topics: string[], active: boolean) {
   const status = useAtomValue(simulateStatusAtom)
   const topicsKey = topics.join('\0')

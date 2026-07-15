@@ -4,7 +4,7 @@ import {
   encodeTwist,
   decodeOdometry,
   decodeTfMessage,
-  decodeImageMessage,
+  parseCompressedImageMessage,
   decodePointCloud2,
   isCameraImageTopic,
   isLidarPointCloudTopic,
@@ -20,6 +20,11 @@ import {
   type DecodedPointCloud,
   type RosPoseStamped,
 } from '@/lib/foxglove/ros-serialization'
+import {
+  getH264Decoder,
+  releaseAllH264Decoders,
+  releaseH264Decoder,
+} from '@/lib/ros/h264-webcodecs-decoder'
 import { FOXGLOVE_WS_CANDIDATES, FOXGLOVE_WS_SUBPROTOCOLS } from '@/lib/ros/foxglove-config'
 import {
   CMD_VEL_TOPIC,
@@ -425,10 +430,30 @@ class FoxgloveBridgeManager {
         ? data
         : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
 
-    const decoded = await decodeImageMessage(bytes, sub.schemaName)
-    if (!decoded?.blobUrl) return
+    const msg = parseCompressedImageMessage(bytes)
+    if (!msg || msg.data.length === 0) return
 
-    const frame: DecodedCameraFrame = decoded
+    const format = msg.format.toLowerCase()
+    if (!format.includes('h264') && !format.includes('avc')) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[Camera] 仅支持 H.264 CompressedImage，收到 format="${msg.format}" @ ${sub.topic}`)
+      }
+      return
+    }
+
+    const decoded = await getH264Decoder(sub.topic).decode(msg.data)
+    if (!decoded) return
+
+    const frame: DecodedCameraFrame = {
+      width: decoded.width,
+      height: decoded.height,
+      encoding: msg.format,
+      stampSec: msg.header.stamp.sec,
+      stampNanosec: msg.header.stamp.nanosec,
+      frameId: msg.header.frame_id,
+      bitmap: decoded.bitmap,
+    }
+
     for (const cb of sub.callbacks) {
       cb(sub.topic, frame)
     }
@@ -588,7 +613,7 @@ class FoxgloveBridgeManager {
         topic,
         channelId: null,
         subscriptionId: null,
-        schemaName: 'sensor_msgs/msg/Image',
+        schemaName: 'sensor_msgs/msg/CompressedImage',
         callbacks: new Set(),
         lastFrameAt: 0,
       }
@@ -616,6 +641,7 @@ class FoxgloveBridgeManager {
           this.client.unsubscribe(current.subscriptionId)
         }
         this.imageSubs.delete(topic)
+        releaseH264Decoder(topic)
       }
     }
   }
@@ -872,6 +898,7 @@ class FoxgloveBridgeManager {
     this.pendingServiceCalls.clear()
     navPathStore.reset()
     tfRuntimeStore.reset()
+    releaseAllH264Decoders()
     for (const sub of this.imageSubs.values()) {
       sub.channelId = null
       sub.subscriptionId = null

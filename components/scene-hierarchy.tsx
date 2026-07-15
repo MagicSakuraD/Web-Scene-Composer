@@ -1,7 +1,7 @@
 'use client'
 
-import { ChevronRight, ChevronDown, Plus, Search } from 'lucide-react'
-import { useEffect } from 'react'
+import { ChevronRight, ChevronDown, Download, Plus, Search } from 'lucide-react'
+import { useCallback, useEffect } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   composedStageAtom,
@@ -13,9 +13,14 @@ import {
 } from '@/lib/scene/atoms'
 import type { SceneTreeNode } from '@/lib/scene/types'
 import { getNodeIcon, getGltfKindLabel } from '@/lib/scene/node-icons'
+import {
+  downloadSelectedObjectGltf,
+  SelectionGltfExportError,
+} from '@/lib/scene/export-selected-gltf'
 import { AddObjectMenu } from '@/components/add-object-menu'
 import { openCreateContextMenu } from '@/components/create-context-menu'
 import { useI18n } from '@/hooks/use-i18n'
+import type { MessageKey } from '@/lib/i18n/messages'
 import { cn } from '@/lib/utils'
 
 interface TreeItemProps {
@@ -120,13 +125,28 @@ export function SceneHierarchy() {
 
   const root = tree[0]
   const isEmpty = !root || (root.children.length === 0 && tree.length <= 1)
+  const canExport = Boolean(selectedId && selectedId !== 'root')
+
+  const handleExportGltf = useCallback(async () => {
+    try {
+      const name = selectedId ? nodes[selectedId]?.name : undefined
+      await downloadSelectedObjectGltf(selectedId, name)
+    } catch (err) {
+      if (err instanceof SelectionGltfExportError) {
+        const key = `sceneHierarchy.exportGltf.${err.code}` as MessageKey
+        window.alert(t(key))
+        return
+      }
+      window.alert(t('sceneHierarchy.exportGltf.exportFailed'))
+    }
+  }, [selectedId, nodes, t])
 
   useEffect(() => {
     if (!selectedId) return
     setExpanded((prev) => {
       const next = new Set(prev)
       next.add('root')
-      let cur = nodes[selectedId]
+      let cur: (typeof nodes)[string] | undefined = nodes[selectedId]
       while (cur) {
         next.add(cur.id)
         cur = cur.parentId ? nodes[cur.parentId] : undefined
@@ -168,6 +188,19 @@ export function SceneHierarchy() {
             className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
           />
         </div>
+        <button
+          type="button"
+          disabled={!canExport}
+          className={cn(
+            'p-1.5 rounded text-muted-foreground',
+            canExport ? 'hover:bg-accent' : 'opacity-40 cursor-not-allowed',
+          )}
+          title={t('sceneHierarchy.exportGltfTitle')}
+          aria-label={t('sceneHierarchy.exportGltf')}
+          onClick={() => void handleExportGltf()}
+        >
+          <Download className="h-4 w-4" />
+        </button>
         <AddObjectMenu>
           <button
             className="p-1.5 rounded hover:bg-accent text-muted-foreground"

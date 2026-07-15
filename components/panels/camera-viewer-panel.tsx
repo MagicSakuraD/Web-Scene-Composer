@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { Camera, Circle, Plus, X } from 'lucide-react'
 import {
@@ -43,11 +43,20 @@ function CameraTile({
   topic: string
   onRemove: () => void
 }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
   const frame = useSyncExternalStore(
     (cb) => cameraFrameStore.subscribe(cb),
     () => cameraFrameStore.getFrame(topic),
     () => undefined as CameraFrameSnapshot | undefined,
   )
+
+  // 挂载 canvas → store 同步绘制（支持左右双路同时显示）
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    return cameraFrameStore.registerCanvas(topic, canvas)
+  }, [topic])
 
   const stamp =
     frame && frame.stampSec > 0
@@ -75,17 +84,16 @@ function CameraTile({
       </div>
 
       <div className="flex-1 min-h-0 flex items-center justify-center relative">
-        {frame?.blobUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={frame.blobUrl}
-            alt={topic}
-            className="max-w-full max-h-full object-contain"
-            draggable={false}
-          />
-        ) : (
+        <canvas
+          ref={canvasRef}
+          className={cn(
+            'max-w-full max-h-full object-contain',
+            frame?.hasImage ? 'block' : 'hidden',
+          )}
+        />
+        {!frame?.hasImage && (
           <p className="text-xs text-muted-foreground px-4 text-center">
-            等待 {topic} 图像帧…
+            等待 H.264 帧…（需 Chromium / Edge WebCodecs）
           </p>
         )}
       </div>
@@ -208,7 +216,7 @@ export function CameraViewerPanel() {
           <div>
             <h3 className="text-sm font-medium">摄像头画面</h3>
             <p className="text-[10px] text-muted-foreground">
-              sensor_msgs/CompressedImage (JPEG) · 多路可并排缩放
+              sensor_msgs/CompressedImage (H.264) · WebCodecs 解码
             </p>
           </div>
         </div>
@@ -273,7 +281,7 @@ export function CameraViewerPanel() {
 
         {availableTopics.length > 0 && selectedTopics.length === 0 && (
           <div className="flex flex-wrap gap-1">
-            <span className="text-[10px] text-muted-foreground w-full mb-0.5">快捷添加（JPEG compressed）：</span>
+            <span className="text-[10px] text-muted-foreground w-full mb-0.5">快捷添加（H.264 compressed）：</span>
             {(availableTopics.length > 0 ? availableTopics : DEFAULT_CAMERA_COMPRESSED_TOPICS).map((t) => (
               <button
                 key={t}

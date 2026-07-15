@@ -15,7 +15,7 @@ import {
   type Connection,
   type Node,
 } from '@xyflow/react'
-import { Layers, Search } from 'lucide-react'
+import { Box, Download, Layers, Search, Upload } from 'lucide-react'
 import type { MaterialGraph } from '@/lib/material-graph/types'
 import { PROTECTED_NODE_TYPES, type MaterialGraphNodeType } from '@/lib/material-graph/types'
 import {
@@ -24,10 +24,20 @@ import {
   type ShaderFlowEdge,
   type ShaderFlowNode,
 } from '@/lib/material-graph/flow-adapters'
+import {
+  downloadMaterialGraphJson,
+  parseImportedMaterialGraph,
+} from '@/lib/material-graph/export-import'
+import {
+  downloadMaterialGraphGltf,
+  GltfExportError,
+} from '@/lib/material-graph/export-gltf-material'
+import type { MessageKey } from '@/lib/i18n/messages'
 import { MaterialGraphFlowContext } from './flow-context'
 import { shaderNodeTypes } from './shader-nodes'
 import { AddNodeMenu } from './add-node-menu'
 import { useI18n } from '@/hooks/use-i18n'
+import { cn } from '@/lib/utils'
 
 interface MaterialGraphFlowProps {
   graph: MaterialGraph
@@ -51,6 +61,7 @@ export function MaterialGraphFlow({
   const colorMode = resolvedTheme === 'dark' ? 'dark' : 'light'
   const isDark = colorMode === 'dark'
   const [search, setSearch] = useState('')
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   const graphRef = useRef(graph)
   graphRef.current = graph
@@ -170,6 +181,45 @@ export function MaterialGraphFlow({
     [setNodes, syncGraphDeferred],
   )
 
+  const handleExport = useCallback(() => {
+    downloadMaterialGraphJson(graphRef.current)
+  }, [])
+
+  const handleExportGltf = useCallback(async () => {
+    try {
+      await downloadMaterialGraphGltf(graphRef.current)
+    } catch (err) {
+      if (err instanceof GltfExportError) {
+        const key = `materialGraph.exportGltf.${err.code}` as MessageKey
+        window.alert(t(key))
+        return
+      }
+      window.alert(t('materialGraph.exportGltfFailed'))
+    }
+  }, [t])
+
+  const handleImportFile = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      e.target.value = ''
+      if (!file) return
+      try {
+        const text = await file.text()
+        const next = parseImportedMaterialGraph(text, {
+          id: graphRef.current.id,
+          name: graphRef.current.name,
+        })
+        const flow = materialGraphToFlow(next)
+        setNodes(flow.nodes)
+        setEdges(flow.edges)
+        onGraphChange(next)
+      } catch {
+        window.alert(t('materialGraph.importFailed'))
+      }
+    },
+    [onGraphChange, setNodes, setEdges, t],
+  )
+
   const existingTypes = nodes.map((n) => n.type as MaterialGraphNodeType)
 
   const contextValue = useMemo(
@@ -217,7 +267,7 @@ export function MaterialGraphFlow({
                 <span className="text-xs text-muted-foreground truncate">{t('materialGraph.title')}</span>
               </div>
               <div className="flex-1" />
-              <div className="relative w-40 max-w-[40%] shrink-0">
+              <div className="relative w-36 max-w-[30%] shrink-0">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
                 <input
                   type="search"
@@ -227,6 +277,52 @@ export function MaterialGraphFlow({
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={handleImportFile}
+              />
+              <button
+                type="button"
+                title={t('materialGraph.exportTitle')}
+                className={cn(
+                  'inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] shrink-0',
+                  'border border-[var(--shader-graph-node-border)] bg-[var(--shader-graph-input-bg)]',
+                  'hover:bg-accent text-muted-foreground hover:text-foreground',
+                )}
+                onClick={handleExport}
+              >
+                <Download className="h-3 w-3" />
+                {t('materialGraph.export')}
+              </button>
+              <button
+                type="button"
+                title={t('materialGraph.exportGltfTitle')}
+                className={cn(
+                  'inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] shrink-0',
+                  'border border-[var(--shader-graph-node-border)] bg-[var(--shader-graph-input-bg)]',
+                  'hover:bg-accent text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => void handleExportGltf()}
+              >
+                <Box className="h-3 w-3" />
+                {t('materialGraph.exportGltf')}
+              </button>
+              <button
+                type="button"
+                title={t('materialGraph.importTitle')}
+                className={cn(
+                  'inline-flex items-center gap-1 h-7 px-2 rounded-md text-[11px] shrink-0',
+                  'border border-[var(--shader-graph-node-border)] bg-[var(--shader-graph-input-bg)]',
+                  'hover:bg-accent text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => importInputRef.current?.click()}
+              >
+                <Upload className="h-3 w-3" />
+                {t('materialGraph.import')}
+              </button>
               <AddNodeMenu
                 existingTypes={existingTypes}
                 meshName={graph.name}

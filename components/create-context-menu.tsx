@@ -5,11 +5,13 @@ import { useAtom, useAtomValue } from 'jotai'
 import { contextMenuAtom, sceneNodesAtom, selectedNodeIdAtom } from '@/lib/scene/atoms'
 import { CREATE_MENU_SECTIONS, buildDeleteMenuItem } from '@/lib/scene/create-menu'
 import { useAddSceneNode } from '@/lib/scene/use-add-scene-node'
+import { useI18n } from '@/hooks/use-i18n'
 import { GltfFileInput } from '@/components/gltf-file-input'
 import { cn } from '@/lib/utils'
 import { isViewportPhysicalLightNode } from '@/lib/viewport/physical-light-node'
 
 export function CreateContextMenu() {
+  const { t } = useI18n()
   const [menu, setMenu] = useAtom(contextMenuAtom)
   const menuRef = useRef<HTMLDivElement>(null)
   const nodes = useAtomValue(sceneNodesAtom)
@@ -65,14 +67,14 @@ export function CreateContextMenu() {
         onContextMenu={(e) => e.preventDefault()}
       >
         <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground border-b border-border mb-1">
-          Create
+          {t('create.title')}
         </div>
         {CREATE_MENU_SECTIONS.map((section) => (
           <div key={section.id}>
             <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-              {section.label}
+              {t(section.labelKey)}
             </div>
-            {section.items.map(({ id, label, icon: Icon, action, disabled }) => (
+            {section.items.map(({ id, labelKey, labelParams, icon: Icon, action, disabled }) => (
               <button
                 key={id}
                 disabled={disabled}
@@ -85,7 +87,7 @@ export function CreateContextMenu() {
                 onClick={() => handleAction(action)}
               >
                 <Icon className="h-4 w-4 text-muted-foreground" />
-                {label}
+                {t(labelKey, labelParams)}
               </button>
             ))}
           </div>
@@ -102,7 +104,7 @@ export function CreateContextMenu() {
             onClick={() => handleAction(deleteItem.action)}
           >
             <deleteItem.icon className="h-4 w-4" />
-            {deleteItem.label}
+            {t(deleteItem.labelKey, deleteItem.labelParams)}
           </button>
         </div>
       </div>

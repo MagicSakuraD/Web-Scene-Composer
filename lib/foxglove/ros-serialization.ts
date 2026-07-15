@@ -86,9 +86,9 @@ const imageDefs = [
 ]
 
 const compressedImageDefs = [
-  ros2humble['sensor_msgs/CompressedImage'],
-  ros2humble['std_msgs/Header'],
-  ros2humble['builtin_interfaces/Time'],
+  (ros2jazzy ?? ros2humble)['sensor_msgs/CompressedImage'],
+  (ros2jazzy ?? ros2humble)['std_msgs/Header'],
+  (ros2jazzy ?? ros2humble)['builtin_interfaces/Time'],
 ]
 
 export const imageReader = new MessageReader(imageDefs)
@@ -123,7 +123,8 @@ export interface DecodedCameraFrame {
   stampSec: number
   stampNanosec: number
   frameId: string
-  blobUrl: string
+  /** WebCodecs 解码后的位图（调用方负责 close 旧帧） */
+  bitmap: ImageBitmap
 }
 
 function normalizeImageData(raw: unknown): Uint8Array {
@@ -136,148 +137,25 @@ function normalizeImageData(raw: unknown): Uint8Array {
   return new Uint8Array()
 }
 
-function mimeFromCompressed(format: string): string | null {
-  const lower = format.toLowerCase()
-  if (lower.includes('jpeg') || lower.includes('jpg')) return 'image/jpeg'
-  if (lower.includes('png')) return 'image/png'
-  return null
-}
-
-async function rawImageToBlobUrl(msg: RosImageMessage): Promise<string | null> {
-  const { width, height, encoding, step, data } = msg
-  if (width <= 0 || height <= 0 || data.length === 0) return null
-
-  const enc = encoding.toLowerCase()
-  if (enc.includes('jpeg') || enc.includes('jpg')) {
-    return URL.createObjectURL(new Blob([data], { type: 'image/jpeg' }))
-  }
-  if (enc.includes('png')) {
-    return URL.createObjectURL(new Blob([data], { type: 'image/png' }))
-  }
-
-  const rgba = new Uint8ClampedArray(width * height * 4)
-  const rowBytes = step > 0 ? step : width * (enc.startsWith('rgba') || enc.startsWith('bgra') ? 4 : 3)
-
-  if (enc === 'rgb8') {
-    for (let y = 0; y < height; y++) {
-      const row = y * rowBytes
-      for (let x = 0; x < width; x++) {
-        const src = row + x * 3
-        const dst = (y * width + x) * 4
-        rgba[dst] = data[src] ?? 0
-        rgba[dst + 1] = data[src + 1] ?? 0
-        rgba[dst + 2] = data[src + 2] ?? 0
-        rgba[dst + 3] = 255
-      }
-    }
-  } else if (enc === 'bgr8') {
-    for (let y = 0; y < height; y++) {
-      const row = y * rowBytes
-      for (let x = 0; x < width; x++) {
-        const src = row + x * 3
-        const dst = (y * width + x) * 4
-        rgba[dst] = data[src + 2] ?? 0
-        rgba[dst + 1] = data[src + 1] ?? 0
-        rgba[dst + 2] = data[src] ?? 0
-        rgba[dst + 3] = 255
-      }
-    }
-  } else if (enc === 'rgba8') {
-    for (let y = 0; y < height; y++) {
-      const row = y * rowBytes
-      for (let x = 0; x < width; x++) {
-        const src = row + x * 4
-        const dst = (y * width + x) * 4
-        rgba[dst] = data[src] ?? 0
-        rgba[dst + 1] = data[src + 1] ?? 0
-        rgba[dst + 2] = data[src + 2] ?? 0
-        rgba[dst + 3] = data[src + 3] ?? 255
-      }
-    }
-  } else if (enc === 'bgra8') {
-    for (let y = 0; y < height; y++) {
-      const row = y * rowBytes
-      for (let x = 0; x < width; x++) {
-        const src = row + x * 4
-        const dst = (y * width + x) * 4
-        rgba[dst] = data[src + 2] ?? 0
-        rgba[dst + 1] = data[src + 1] ?? 0
-        rgba[dst + 2] = data[src] ?? 0
-        rgba[dst + 3] = data[src + 3] ?? 255
-      }
-    }
-  } else if (enc === 'mono8' || enc === '8uc1') {
-    for (let y = 0; y < height; y++) {
-      const row = y * rowBytes
-      for (let x = 0; x < width; x++) {
-        const gray = data[row + x] ?? 0
-        const dst = (y * width + x) * 4
-        rgba[dst] = gray
-        rgba[dst + 1] = gray
-        rgba[dst + 2] = gray
-        rgba[dst + 3] = 255
-      }
-    }
-  } else {
-    return null
-  }
-
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return null
-  ctx.putImageData(new ImageData(rgba, width, height), 0, 0)
-
-  return new Promise((resolve) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        resolve(null)
-        return
-      }
-      resolve(URL.createObjectURL(blob))
-    }, 'image/png')
-  })
-}
-
-export async function decodeImageMessage(
-  data: Uint8Array,
-  schemaName: string,
-): Promise<DecodedCameraFrame | null> {
+/** 解析 CompressedImage CDR；H.264 像素解码见 h264-webcodecs-decoder */
+export function parseCompressedImageMessage(data: Uint8Array): RosCompressedImageMessage | null {
   try {
-    if (schemaName.includes('CompressedImage')) {
-      const msg = compressedImageReader.readMessage<RosCompressedImageMessage>(data)
-      const bytes = normalizeImageData(msg.data)
-      const mime = mimeFromCompressed(msg.format) ?? 'image/jpeg'
-      if (bytes.length === 0) return null
-      return {
-        width: 0,
-        height: 0,
-        encoding: msg.format,
-        stampSec: msg.header.stamp.sec,
-        stampNanosec: msg.header.stamp.nanosec,
-        frameId: msg.header.frame_id,
-        blobUrl: URL.createObjectURL(new Blob([bytes], { type: mime })),
-      }
-    }
-
-    const msg = imageReader.readMessage<RosImageMessage>(data)
-    const bytes = normalizeImageData(msg.data)
-    const blobUrl = await rawImageToBlobUrl({ ...msg, data: bytes })
-    if (!blobUrl) return null
-
+    const msg = compressedImageReader.readMessage<RosCompressedImageMessage>(data)
     return {
-      width: msg.width,
-      height: msg.height,
-      encoding: msg.encoding,
-      stampSec: msg.header.stamp.sec,
-      stampNanosec: msg.header.stamp.nanosec,
-      frameId: msg.header.frame_id,
-      blobUrl,
+      ...msg,
+      data: normalizeImageData(msg.data),
     }
   } catch {
     return null
   }
+}
+
+/** @deprecated 使用 parseCompressedImageMessage + H264TopicDecoder */
+export async function decodeImageMessage(
+  _data: Uint8Array,
+  _schemaName: string,
+): Promise<DecodedCameraFrame | null> {
+  return null
 }
 
 export function isCameraImageTopic(topic: string, schemaName?: string): boolean {
@@ -299,7 +177,7 @@ export function toCompressedImageTopic(topic: string): string {
   return `${topic.replace(/\/$/, '')}/compressed`
 }
 
-/** 有 compressed 同名话题时隐藏 raw，列表里只推荐 JPEG 流 */
+/** 有 compressed 同名话题时隐藏 raw，列表里只推荐 compressed 流 */
 export function preferCompressedCameraTopics(topics: readonly string[]): string[] {
   const set = new Set(topics)
   const picked = topics.filter((topic) => {

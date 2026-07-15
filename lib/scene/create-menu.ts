@@ -9,6 +9,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import type { NodeType } from './types'
+import type { MessageKey } from '@/lib/i18n/messages'
 
 export type CreateMenuAction =
   | { kind: 'node'; type: NodeType }
@@ -17,7 +18,9 @@ export type CreateMenuAction =
 
 export interface CreateMenuItem {
   id: string
-  label: string
+  labelKey: MessageKey
+  /** 删除项等需要动态插入节点名 */
+  labelParams?: Record<string, string>
   icon: LucideIcon
   action: CreateMenuAction
   /** 无有效删除目标时禁用（如 Root） */
@@ -26,39 +29,64 @@ export interface CreateMenuItem {
 
 export interface CreateMenuSection {
   id: string
-  label: string
+  labelKey: MessageKey
   items: CreateMenuItem[]
 }
 
 export const CREATE_MENU_SECTIONS: CreateMenuSection[] = [
   {
     id: 'physics',
-    label: 'Physics',
+    labelKey: 'create.section.physics',
     items: [
-      { id: 'ground', label: 'Ground Plane', icon: Mountain, action: { kind: 'node', type: 'ground' } },
+      {
+        id: 'ground',
+        labelKey: 'create.ground',
+        icon: Mountain,
+        action: { kind: 'node', type: 'ground' },
+      },
     ],
   },
   {
     id: 'lights',
-    label: 'Lights',
+    labelKey: 'create.section.lights',
     items: [
-      { id: 'distant-light', label: 'Distant Light', icon: Sun, action: { kind: 'node', type: 'distant-light' } },
-      { id: 'point-light', label: 'Point Light', icon: Lightbulb, action: { kind: 'node', type: 'point-light' } },
+      {
+        id: 'distant-light',
+        labelKey: 'create.distantLight',
+        icon: Sun,
+        action: { kind: 'node', type: 'distant-light' },
+      },
+      {
+        id: 'point-light',
+        labelKey: 'create.pointLight',
+        icon: Lightbulb,
+        action: { kind: 'node', type: 'point-light' },
+      },
     ],
   },
   {
     id: 'shapes',
-    label: 'Shape',
+    labelKey: 'create.section.shapes',
     items: [
-      { id: 'cube', label: 'Cube', icon: Box, action: { kind: 'node', type: 'cube' } },
-      { id: 'sphere', label: 'Sphere', icon: Circle, action: { kind: 'node', type: 'sphere' } },
+      { id: 'cube', labelKey: 'create.cube', icon: Box, action: { kind: 'node', type: 'cube' } },
+      {
+        id: 'sphere',
+        labelKey: 'create.sphere',
+        icon: Circle,
+        action: { kind: 'node', type: 'sphere' },
+      },
     ],
   },
   {
     id: 'assets',
-    label: 'Assets',
+    labelKey: 'create.section.assets',
     items: [
-      { id: 'import', label: 'Import glTF / GLB…', icon: FileBox, action: { kind: 'import-gltf' } },
+      {
+        id: 'import',
+        labelKey: 'create.importGltf',
+        icon: FileBox,
+        action: { kind: 'import-gltf' },
+      },
     ],
   },
 ]
@@ -67,7 +95,8 @@ export const CREATE_MENU_SECTIONS: CreateMenuSection[] = [
 export function buildDeleteMenuItem(nodeName: string | null, canDelete: boolean): CreateMenuItem {
   return {
     id: 'delete',
-    label: nodeName ? `Delete "${nodeName}"` : 'Delete',
+    labelKey: nodeName ? 'create.deleteNamed' : 'create.delete',
+    labelParams: nodeName ? { name: nodeName } : undefined,
     icon: Trash2,
     action: { kind: 'delete' },
     disabled: !canDelete,

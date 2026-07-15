@@ -4,23 +4,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { HelpCircle, X } from 'lucide-react'
 import { useI18n } from '@/hooks/use-i18n'
+import type { MessageKey } from '@/lib/i18n/messages'
 import { cn } from '@/lib/utils'
 
 type HelpSection = {
-  titleKey: 'help.section.viewport' | 'help.section.transform' | 'help.section.scene'
-  items: Array<
-    | 'help.viewport.lmb'
-    | 'help.viewport.mmb'
-    | 'help.viewport.wheel'
-    | 'help.viewport.rmbFly'
-    | 'help.viewport.frame'
-    | 'help.viewport.contextMenu'
-    | 'help.transform.gizmo'
-    | 'help.transform.toolbar'
-    | 'help.transform.space'
-    | 'help.scene.hierarchy'
-    | 'help.scene.inspector'
-  >
+  titleKey: MessageKey
+  items: MessageKey[]
 }
 
 const HELP_SECTIONS: HelpSection[] = [
@@ -41,7 +30,19 @@ const HELP_SECTIONS: HelpSection[] = [
   },
   {
     titleKey: 'help.section.scene',
-    items: ['help.scene.hierarchy', 'help.scene.inspector'],
+    items: ['help.scene.hierarchy', 'help.scene.inspector', 'help.scene.exportGltf'],
+  },
+  {
+    titleKey: 'help.section.materialGraph',
+    items: [
+      'help.materialGraph.openPanel',
+      'help.materialGraph.connect',
+      'help.materialGraph.disconnect',
+      'help.materialGraph.deleteNode',
+      'help.materialGraph.panZoom',
+      'help.materialGraph.apply',
+      'help.materialGraph.export',
+    ],
   },
 ]
 
