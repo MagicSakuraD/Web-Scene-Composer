@@ -15,39 +15,39 @@ C:\IsaacSim-ros_workspaces\jazzy_ws\src\navigation\carter_web_nav_bridge\
 
 ```mermaid
 flowchart TB
-  subgraph Web["Web Scene Composer（浏览器 localhost:3000）"]
-    UI[场景编辑 / 3D 视口 WebGPU]
-    Sim[Simulate → Foxglove Client]
-    Nav[Nav Goal 面板 + Waypoint Gizmo]
-    PathViz[/plan 线 + /local_plan 路面]
-    Odom[底盘 / 轮子 TF 同步]
+  subgraph Web["Web Scene Composer - browser :3000"]
+    UI["场景组装 / 3D 视口 WebGPU"]
+    Sim["Simulate to Foxglove Client"]
+    Nav["Nav Goal 面板 + Waypoint Gizmo"]
+    PathViz["plan 线 + local_plan 路面"]
+    Odom["底盘 / 轮子 TF 同步"]
   end
 
   subgraph Bridge["Foxglove Bridge :8765"]
-    WS[WebSocket foxglove.sdk.v1]
-    Svc[Service 转发]
-    Sub[Topic 转发]
+    WS["WebSocket foxglove.sdk.v1"]
+    Svc["Service 转发"]
+    Sub["Topic 转发"]
   end
 
-  subgraph ROS["jazzy_ws（Zenoh 中间件）"]
-    Zenoh[pixi run zenoh]
-    NavBridge[web_nav_bridge_node.py]
-    Nav2[Nav2 carter_navigation]
-    Isaac[Isaac Sim 6.0.1 + Nova Carter]
+  subgraph ROS["jazzy_ws - Zenoh"]
+    Zenoh["pixi run zenoh"]
+    NavBridge["web_nav_bridge_node.py"]
+    Nav2["Nav2 carter_navigation"]
+    Isaac["Isaac Sim + Nova Carter"]
   end
 
   UI --> Sim
   Nav --> Sim
-  Sim -->|ws://127.0.0.1:8765| WS
+  Sim -->|"ws://127.0.0.1:8765"| WS
   WS --> Svc
   WS --> Sub
 
   Svc -->|callService| NavBridge
   NavBridge -->|ActionClient| Nav2
-  Nav2 -->|/cmd_vel| Isaac
-  Isaac -->|/chassis/odom /tf /lidar...| Sub
-  Nav2 -->|/plan /plan_smoothed /local_plan| Sub
-  Nav2 -->|_action/feedback /status| Sub
+  Nav2 -->|cmd_vel| Isaac
+  Isaac -->|"odom / tf / lidar"| Sub
+  Nav2 -->|"plan / local_plan"| Sub
+  Nav2 -->|"action feedback / status"| Sub
 
   Sub --> PathViz
   Sub --> Odom

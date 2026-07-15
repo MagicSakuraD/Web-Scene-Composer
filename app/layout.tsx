@@ -16,23 +16,13 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'Web Scene Composer',
-  description: 'A web-based 3D scene composition tool',
-  generator: 'v0.app',
+  description:
+    'Browser-based scene composer and Isaac Sim / ROS 2 co-debug frontend for Nova Carter — Nav2, Xbox diff-drive, sensors.',
   icons: {
     icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
+      { url: '/wsc-icon.png', type: 'image/png', sizes: '192x192' },
     ],
+    shortcut: '/icon-dark-32x32.png',
     apple: '/apple-icon.png',
   },
 }
