@@ -35,6 +35,8 @@ export interface SceneNode {
   type: NodeType
   transform: Transform
   parentId: string | null
+  /** 大纲可见性；undefined 视为可见（隐藏后视口不渲染、也不参与拾取） */
+  visible?: boolean
   lightIntensity?: number
   lightColor?: string
   /** 平行光照射目标（世界坐标） */

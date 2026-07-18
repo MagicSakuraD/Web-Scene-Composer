@@ -15,6 +15,7 @@ import {
   decodeNavGoalFeedback,
   decodeNavGoalStatus,
   decodeNavPath,
+  decodeOccupancyGrid,
   type CmdVel,
   type DecodedCameraFrame,
   type DecodedPointCloud,
@@ -43,6 +44,11 @@ import {
 } from '@/lib/ros/nav-goal-config'
 import { navGoalStore } from '@/lib/ros/nav-goal-store'
 import { navPathStore } from '@/lib/ros/nav-path-store'
+import {
+  costmapStores,
+  costmapStoreByTopic,
+  type CostmapStore,
+} from '@/lib/ros/costmap-store'
 import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
 
 type LogFn = (entry: Omit<SimulateLogEntry, 'id' | 'time'>) => void
@@ -76,6 +82,12 @@ interface PointCloudSubscription {
 
 const IMAGE_UI_MAX_FPS = 30
 
+function toUint8Array(data: ArrayBuffer | ArrayBufferView): Uint8Array {
+  if (data instanceof Uint8Array) return data
+  if (data instanceof ArrayBuffer) return new Uint8Array(data)
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+}
+
 class FoxgloveBridgeManager {
   private client: FoxgloveClient | null = null
   private ws: WebSocket | null = null
@@ -90,6 +102,8 @@ class FoxgloveBridgeManager {
   private log: LogFn = () => {}
   private onOdom: OdomFn = () => {}
   private channels: Channel[] = []
+  /** Foxglove advertise 是增量推送的，需按 id 累积（否则后到的一批会覆盖之前的话题） */
+  private channelsById = new Map<number, Channel>()
   private services: Service[] = []
   private nextServiceCallId = 1
   private pendingServiceCalls = new Map<
@@ -101,7 +115,11 @@ class FoxgloveBridgeManager {
   private navPlanSmoothedSubscriptionId: SubscriptionId | null = null
   private navPlanSubscriptionId: SubscriptionId | null = null
   private navLocalPlanSubscriptionId: SubscriptionId | null = null
+  /** topic → 订阅 id（local + global costmap） */
+  private costmapSubscriptionIds = new Map<string, SubscriptionId>()
   private navGoalActive = false
+  private costmapHooksBound = false
+  private costmapVisibilityUnsubs: (() => void)[] = []
   private cachedCameraTopics: readonly string[] = EMPTY_CAMERA_TOPICS
   private cachedLidarTopics: readonly string[] = EMPTY_LIDAR_TOPICS
   private imageSubs = new Map<string, ImageSubscription>()
@@ -187,7 +205,9 @@ class FoxgloveBridgeManager {
 
         client.on('advertise', (channels: Channel[]) => {
           if (generation !== this.connectGeneration) return
-          this.channels = channels
+          // advertise 为增量：累积而非覆盖，否则后到的 Nav2 话题会挤掉已有相机/里程计等
+          for (const ch of channels) this.channelsById.set(ch.id, ch)
+          this.channels = Array.from(this.channelsById.values())
           this.notifyTopicListeners()
           this.notifyLidarTopicListeners()
           this.syncOdomSubscription(client)
@@ -197,7 +217,20 @@ class FoxgloveBridgeManager {
           if (this.navGoalActive) {
             this.syncNavGoalSubscriptions(client)
             this.syncNavPathSubscriptions(client)
+            this.syncCostmapSubscriptions(client)
           }
+        })
+
+        client.on('unadvertise', (channelIds: number[]) => {
+          if (generation !== this.connectGeneration) return
+          let changed = false
+          for (const id of channelIds) {
+            if (this.channelsById.delete(id)) changed = true
+          }
+          if (!changed) return
+          this.channels = Array.from(this.channelsById.values())
+          this.notifyTopicListeners()
+          this.notifyLidarTopicListeners()
         })
 
         client.on('advertiseServices', (services: Service[]) => {
@@ -211,6 +244,7 @@ class FoxgloveBridgeManager {
             if (this.navGoalActive) {
               this.syncNavGoalSubscriptions(client)
               this.syncNavPathSubscriptions(client)
+              this.syncCostmapSubscriptions(client)
             }
           }
         })
@@ -219,7 +253,7 @@ class FoxgloveBridgeManager {
           const pending = this.pendingServiceCalls.get(response.callId)
           if (!pending) return
           this.pendingServiceCalls.delete(response.callId)
-          pending.resolve(new Uint8Array(response.data))
+          pending.resolve(toUint8Array(response.data))
         })
 
         client.on('serviceCallFailure', (failure) => {
@@ -233,20 +267,14 @@ class FoxgloveBridgeManager {
           if (generation !== this.connectGeneration) return
 
           if (event.subscriptionId === this.odomSubscriptionId) {
-            const bytes =
-              event.data instanceof Uint8Array
-                ? event.data
-                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const bytes = toUint8Array(event.data)
             const pose = decodeOdometry(bytes)
             if (pose) this.onOdom(pose)
             return
           }
 
           if (event.subscriptionId === this.tfSubscriptionId) {
-            const bytes =
-              event.data instanceof Uint8Array
-                ? event.data
-                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const bytes = toUint8Array(event.data)
             const transforms = decodeTfMessage(bytes)
             if (!transforms) {
               // decode 失败时 decodeTfMessage 已打一次 warn；此处不再刷屏
@@ -303,20 +331,14 @@ class FoxgloveBridgeManager {
           }
 
           if (event.subscriptionId === this.navFeedbackSubscriptionId) {
-            const bytes =
-              event.data instanceof Uint8Array
-                ? event.data
-                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const bytes = toUint8Array(event.data)
             const fb = decodeNavGoalFeedback(bytes)
             if (fb) navGoalStore.applyFeedback(fb)
             return
           }
 
           if (event.subscriptionId === this.navStatusSubscriptionId) {
-            const bytes =
-              event.data instanceof Uint8Array
-                ? event.data
-                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const bytes = toUint8Array(event.data)
             const status = decodeNavGoalStatus(bytes)
             if (status != null) {
               navGoalStore.applyStatus(status)
@@ -325,33 +347,33 @@ class FoxgloveBridgeManager {
           }
 
           if (event.subscriptionId === this.navPlanSmoothedSubscriptionId) {
-            const bytes =
-              event.data instanceof Uint8Array
-                ? event.data
-                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const bytes = toUint8Array(event.data)
             const path = decodeNavPath(bytes)
             if (path) navPathStore.setPath(PLAN_SMOOTHED_TOPIC, path)
             return
           }
 
           if (event.subscriptionId === this.navPlanSubscriptionId) {
-            const bytes =
-              event.data instanceof Uint8Array
-                ? event.data
-                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const bytes = toUint8Array(event.data)
             const path = decodeNavPath(bytes)
             if (path) navPathStore.setPath(PLAN_TOPIC, path)
             return
           }
 
           if (event.subscriptionId === this.navLocalPlanSubscriptionId) {
-            const bytes =
-              event.data instanceof Uint8Array
-                ? event.data
-                : new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)
+            const bytes = toUint8Array(event.data)
             const path = decodeNavPath(bytes)
             if (path) navPathStore.setPath(LOCAL_PLAN_TOPIC, path)
             return
+          }
+
+          for (const [topic, subId] of this.costmapSubscriptionIds) {
+            if (event.subscriptionId === subId) {
+              const bytes = toUint8Array(event.data)
+              const grid = decodeOccupancyGrid(bytes)
+              if (grid) costmapStoreByTopic(topic)?.setGrid(grid)
+              return
+            }
           }
         })
 
@@ -425,10 +447,7 @@ class FoxgloveBridgeManager {
     if (now - sub.lastFrameAt < minInterval) return
     sub.lastFrameAt = now
 
-    const bytes =
-      data instanceof Uint8Array
-        ? data
-        : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    const bytes = toUint8Array(data)
 
     const msg = parseCompressedImageMessage(bytes)
     if (!msg || msg.data.length === 0) return
@@ -480,10 +499,7 @@ class FoxgloveBridgeManager {
   }
 
   private handlePointCloudMessage(sub: PointCloudSubscription, data: ArrayBuffer | ArrayBufferView) {
-    const bytes =
-      data instanceof Uint8Array
-        ? data
-        : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    const bytes = toUint8Array(data)
 
     const cloud = decodePointCloud2(bytes)
     if (!cloud) return
@@ -663,6 +679,7 @@ class FoxgloveBridgeManager {
     this.clientPublishEnabled = false
     this.servicesEnabled = false
     this.channels = []
+    this.channelsById.clear()
     this.services = []
     this.pendingServiceCalls.clear()
     this.navFeedbackSubscriptionId = null
@@ -712,17 +729,39 @@ class FoxgloveBridgeManager {
   /** Nav Goal 面板：订阅 feedback/status 并跟踪桥接 service */
   enableNavGoalTracking(active: boolean) {
     this.navGoalActive = active
+    this.ensureCostmapVisibilityHooks()
     if (!this.client) {
-      if (!active) navGoalStore.setServicesReady(false)
+      if (!active) {
+        navGoalStore.setServicesReady(false)
+        this.unsubscribeAllCostmaps()
+      }
       return
     }
     if (active) {
       this.syncNavGoalSubscriptions(this.client)
       this.syncNavPathSubscriptions(this.client)
+      this.syncCostmapSubscriptions(this.client)
     } else {
       this.unsubscribeNavGoalTopics()
+      this.unsubscribeAllCostmaps()
       navGoalStore.setServicesReady(false)
       navPathStore.reset()
+    }
+  }
+
+  private ensureCostmapVisibilityHooks() {
+    if (this.costmapHooksBound) return
+    this.costmapHooksBound = true
+    for (const store of costmapStores) {
+      const unsub = store.onVisibilityChange((visible) => {
+        if (!this.client || !this.navGoalActive) {
+          if (!visible) this.unsubscribeCostmap(store)
+          return
+        }
+        if (visible) this.syncCostmapSubscription(this.client, store)
+        else this.unsubscribeCostmap(store)
+      })
+      this.costmapVisibilityUnsubs.push(unsub)
     }
   }
 
@@ -757,6 +796,50 @@ class FoxgloveBridgeManager {
     if (local && this.navLocalPlanSubscriptionId == null) {
       this.navLocalPlanSubscriptionId = client.subscribe(local.id)
       this.log({ level: 'info', message: `已订阅 ${LOCAL_PLAN_TOPIC}` })
+    }
+  }
+
+  /** 面板开关打开时才订阅对应 costmap（带宽较大） */
+  private syncCostmapSubscriptions(client: FoxgloveClient) {
+    for (const store of costmapStores) {
+      if (store.visible) this.syncCostmapSubscription(client, store)
+      else this.unsubscribeCostmap(store)
+    }
+  }
+
+  private syncCostmapSubscription(client: FoxgloveClient, store: CostmapStore) {
+    if (!store.visible) {
+      this.unsubscribeCostmap(store)
+      return
+    }
+    // 已有活动订阅时，即使某批 advertise 暂时不含该频道也不要退订/翻转状态
+    if (this.costmapSubscriptionIds.has(store.topic)) {
+      store.setSubscribed(true)
+      return
+    }
+    const channel = this.channels.find((c) => c.topic === store.topic)
+    if (!channel) {
+      store.setSubscribed(false)
+      return
+    }
+    this.costmapSubscriptionIds.set(store.topic, client.subscribe(channel.id))
+    store.setSubscribed(true)
+    this.log({ level: 'info', message: `已订阅 ${store.topic}` })
+  }
+
+  private unsubscribeCostmap(store: CostmapStore) {
+    const subId = this.costmapSubscriptionIds.get(store.topic)
+    if (this.client && subId != null) {
+      this.client.unsubscribe(subId)
+    }
+    this.costmapSubscriptionIds.delete(store.topic)
+    store.setSubscribed(false)
+    store.clearGrid()
+  }
+
+  private unsubscribeAllCostmaps() {
+    for (const store of costmapStores) {
+      this.unsubscribeCostmap(store)
     }
   }
 
@@ -879,6 +962,7 @@ class FoxgloveBridgeManager {
         }
       }
       this.unsubscribeNavGoalTopics()
+      this.unsubscribeAllCostmaps()
       if (this.cmdVelChannelId != null) {
         this.client.unadvertise(this.cmdVelChannelId)
       }
@@ -894,9 +978,15 @@ class FoxgloveBridgeManager {
     this.clientPublishEnabled = false
     this.servicesEnabled = false
     this.channels = []
+    this.channelsById.clear()
     this.services = []
     this.pendingServiceCalls.clear()
+    this.costmapSubscriptionIds.clear()
     navPathStore.reset()
+    for (const store of costmapStores) {
+      store.setSubscribed(false)
+      store.clearGrid()
+    }
     tfRuntimeStore.reset()
     releaseAllH264Decoders()
     for (const sub of this.imageSubs.values()) {

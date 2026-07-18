@@ -102,6 +102,20 @@ export const updateNodeTransformAtom = atom(
   },
 )
 
+export const toggleNodeVisibilityAtom = atom(
+  null,
+  (get, set, update: { id: string; visible?: boolean }) => {
+    const nodes = get(sceneNodesAtom)
+    const node = nodes[update.id]
+    if (!node) return
+    const nextVisible = update.visible ?? node.visible === false
+    set(sceneNodesAtom, {
+      ...nodes,
+      [update.id]: { ...node, visible: nextVisible },
+    })
+  },
+)
+
 export const updateNodePropsAtom = atom(
   null,
   (get, set, update: {

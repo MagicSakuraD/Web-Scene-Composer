@@ -601,3 +601,95 @@ export function decodeNavPath(data: Uint8Array): DecodedNavPath | null {
     return null
   }
 }
+
+const occupancyGridDefs = [
+  ros2msgs['nav_msgs/OccupancyGrid'] ?? ros2humble['nav_msgs/OccupancyGrid'],
+  ros2msgs['nav_msgs/MapMetaData'] ?? ros2humble['nav_msgs/MapMetaData'],
+  ros2msgs['std_msgs/Header'] ?? ros2humble['std_msgs/Header'],
+  ros2msgs['builtin_interfaces/Time'] ?? ros2humble['builtin_interfaces/Time'],
+  ros2msgs['geometry_msgs/Pose'] ?? ros2humble['geometry_msgs/Pose'],
+  ros2msgs['geometry_msgs/Point'] ?? ros2humble['geometry_msgs/Point'],
+  ros2msgs['geometry_msgs/Quaternion'] ?? ros2humble['geometry_msgs/Quaternion'],
+].filter((d): d is NonNullable<typeof d> => d != null)
+
+const occupancyGridReader = new MessageReader(occupancyGridDefs)
+
+export interface DecodedOccupancyGrid {
+  frameId: string
+  resolution: number
+  width: number
+  height: number
+  origin: {
+    position: { x: number; y: number; z: number }
+    orientation: { x: number; y: number; z: number; w: number }
+  }
+  /** row-major, cell (x,y) at index y*width+x；Nav2: -1 unknown, 0 free, 1–99 cost, 100 lethal */
+  data: Int8Array
+}
+
+/** nav_msgs/msg/OccupancyGrid — jazzy_ws / Nav2 local_costmap */
+export function decodeOccupancyGrid(data: Uint8Array): DecodedOccupancyGrid | null {
+  try {
+    const msg = occupancyGridReader.readMessage<{
+      header: { frame_id: string }
+      info: {
+        resolution: number
+        width: number
+        height: number
+        origin: {
+          position: { x: number; y: number; z: number }
+          orientation: { x: number; y: number; z: number; w: number }
+        }
+      }
+      data: Int8Array | Uint8Array | number[]
+    }>(data)
+
+    const width = Number(msg.info?.width ?? 0)
+    const height = Number(msg.info?.height ?? 0)
+    if (!width || !height || !msg.info?.resolution) return null
+
+    const raw = msg.data
+    const cells = width * height
+    let grid: Int8Array
+    if (raw instanceof Int8Array) {
+      grid = raw.length >= cells ? raw.subarray(0, cells) : Int8Array.from(raw)
+    } else if (raw instanceof Uint8Array) {
+      // CDR 有时给出无符号视图；255 → -1 (unknown)
+      grid = new Int8Array(raw.buffer, raw.byteOffset, Math.min(raw.byteLength, cells))
+    } else if (Array.isArray(raw)) {
+      grid = Int8Array.from(raw.slice(0, cells))
+    } else {
+      return null
+    }
+
+    const o = msg.info.origin
+    return {
+      frameId: msg.header?.frame_id ?? '',
+      resolution: msg.info.resolution,
+      width,
+      height,
+      origin: {
+        position: {
+          x: o?.position?.x ?? 0,
+          y: o?.position?.y ?? 0,
+          z: o?.position?.z ?? 0,
+        },
+        orientation: {
+          x: o?.orientation?.x ?? 0,
+          y: o?.orientation?.y ?? 0,
+          z: o?.orientation?.z ?? 0,
+          w: o?.orientation?.w ?? 1,
+        },
+      },
+      data: grid,
+    }
+  } catch (err) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[Costmap] decodeOccupancyGrid CDR 失败', {
+        byteLength: data.byteLength,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+    return null
+  }
+}

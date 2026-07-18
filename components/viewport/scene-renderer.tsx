@@ -6,6 +6,7 @@ import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import {
   renderStageAtom,
+  sceneNodesAtom,
   selectedNodeIdAtom,
   selectedNodeAtom,
   selectedObjectReadyAtom,
@@ -26,6 +27,7 @@ import { SelectionOutline } from './selection-outline'
 import { RuntimeRobotSync } from './runtime-robot-sync'
 import { LidarPointCloud } from './lidar-point-cloud'
 import { NavPathLines } from './nav-path-lines'
+import { CostmapOverlay } from './costmap-overlay'
 import { MaterialGraphSync } from './material-graph-sync'
 import { ViewportSceneHelpers } from './viewport-scene-helpers'
 import { PhysicalDistantLightNode } from './physical-distant-light-node'
@@ -46,6 +48,7 @@ function eulerToRad(degrees: [number, number, number]): [number, number, number]
 
 function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
   const { scene } = useGLTF(url)
+  const nodes = useAtomValue(sceneNodesAtom)
   const clone = useMemo(() => {
     const c = scene.clone(true)
     // 先打 sceneNodeId，再增强（含 auto-instance）：proxy 会继承 tag
@@ -53,6 +56,27 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
     enhanceGltfScene(c)
     return c
   }, [scene, assetRootId])
+
+  // 仅当隐藏集合变化（或 glb 重新加载）时才回写 gltf-prim 可见性，避免 transform 编辑触发遍历
+  const hiddenKey = useMemo(
+    () =>
+      Object.entries(nodes)
+        .filter(([, n]) => n.visible === false)
+        .map(([id]) => id)
+        .sort()
+        .join('|'),
+    [nodes],
+  )
+
+  useEffect(() => {
+    const hidden = new Set(hiddenKey ? hiddenKey.split('|') : [])
+    clone.traverse((obj) => {
+      const sid = obj.userData.sceneNodeId
+      if (typeof sid === 'string') {
+        obj.visible = !hidden.has(sid)
+      }
+    })
+  }, [clone, hiddenKey])
 
   useEffect(() => {
     clone.traverse((obj) => {
@@ -201,7 +225,11 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
   }
 
   return (
-    <group ref={groupRef} userData={{ sceneRootId: node.type === 'asset-ref' ? node.id : undefined }}>
+    <group
+      ref={groupRef}
+      visible={node.visible !== false}
+      userData={{ sceneRootId: node.type === 'asset-ref' ? node.id : undefined }}
+    >
       {renderContent()}
       {node.children.map((child) => (
         <SceneNodeObject key={child.id} node={child} />
@@ -258,6 +286,7 @@ export function SceneRenderer() {
       <RuntimeRobotSync />
       {VIEWPORT_WEBGPU_FEATURES.lidarPointCloud ? <LidarPointCloud /> : null}
       <NavPathLines />
+      <CostmapOverlay />
       {VIEWPORT_WEBGPU_FEATURES.materialGraph ? <MaterialGraphSync /> : null}
       {tree.map((node) => (
         <SceneNodeObject key={node.id} node={node} />

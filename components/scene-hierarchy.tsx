@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronRight, ChevronDown, Download, Plus, Search } from 'lucide-react'
+import { ChevronRight, ChevronDown, Download, Eye, EyeOff, Plus, Search } from 'lucide-react'
 import { useCallback, useEffect } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
@@ -10,6 +10,7 @@ import {
   hierarchySearchAtom,
   expandedNodesAtom,
   contextMenuAtom,
+  toggleNodeVisibilityAtom,
 } from '@/lib/scene/atoms'
 import type { SceneTreeNode } from '@/lib/scene/types'
 import { getNodeIcon, getGltfKindLabel } from '@/lib/scene/node-icons'
@@ -30,12 +31,16 @@ interface TreeItemProps {
 }
 
 function TreeItem({ node, level, search }: TreeItemProps) {
+  const { t } = useI18n()
   const [expanded, setExpanded] = useAtom(expandedNodesAtom)
   const [selectedId, setSelectedId] = useAtom(selectedNodeIdAtom)
   const setContextMenu = useSetAtom(contextMenuAtom)
+  const toggleVisibility = useSetAtom(toggleNodeVisibilityAtom)
   const isExpanded = expanded.has(node.id)
   const hasChildren = node.children.length > 0
   const isSelected = selectedId === node.id
+  const isHidden = node.visible === false
+  const canToggleVisibility = node.id !== 'root'
 
   const matchesSearch =
     !search ||
@@ -58,10 +63,11 @@ function TreeItem({ node, level, search }: TreeItemProps) {
     <div>
       <div
         className={cn(
-          'flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer text-sm select-none transition-colors min-w-0',
+          'group flex items-center gap-1 py-0.5 px-1 rounded cursor-pointer text-sm select-none transition-colors min-w-0',
           isSelected
             ? 'bg-selection-accent text-white'
             : 'hover:bg-accent/50 text-foreground/90',
+          isHidden && !isSelected && 'text-foreground/40',
         )}
         style={{ paddingLeft: `${level * 14 + 4}px` }}
         onClick={() => setSelectedId(node.id)}
@@ -103,6 +109,28 @@ function TreeItem({ node, level, search }: TreeItemProps) {
           >
             {getGltfKindLabel(node.gltfKind)}
           </span>
+        )}
+        {canToggleVisibility && (
+          <button
+            type="button"
+            className={cn(
+              'flex-shrink-0 p-0.5 rounded transition-opacity',
+              isSelected ? 'hover:bg-white/20' : 'hover:bg-accent',
+              isHidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+            )}
+            title={isHidden ? t('sceneHierarchy.show') : t('sceneHierarchy.hide')}
+            aria-label={isHidden ? t('sceneHierarchy.show') : t('sceneHierarchy.hide')}
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleVisibility({ id: node.id })
+            }}
+          >
+            {isHidden ? (
+              <EyeOff className="h-3.5 w-3.5" />
+            ) : (
+              <Eye className="h-3.5 w-3.5" />
+            )}
+          </button>
         )}
       </div>
       {isExpanded &&

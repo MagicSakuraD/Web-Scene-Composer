@@ -9,3 +9,7 @@ export const NAV_MAP_FRAME = 'map'
 export const PLAN_TOPIC = '/plan'
 export const PLAN_SMOOTHED_TOPIC = '/plan_smoothed'
 export const LOCAL_PLAN_TOPIC = '/local_plan'
+
+/** Nav2 costmaps (nav_msgs/msg/OccupancyGrid) */
+export const LOCAL_COSTMAP_TOPIC = '/local_costmap/costmap'
+export const GLOBAL_COSTMAP_TOPIC = '/global_costmap/costmap'

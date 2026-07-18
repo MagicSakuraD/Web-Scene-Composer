@@ -1,10 +1,13 @@
 import * as THREE from 'three'
 
 /**
- * odom 水平位移增量 (Δx, Δz) 是否取反。
- * Isaac 向前 / 向左 与 Three 场景相反时可先试 true。
+ * odom 水平位移增量 (Δx, Δz) 是否取反（绕 Three Y-up 等价转 180°）。
+ *
+ * 方案 B：显示位姿 = 场景起点 + (当前 odom − odom 起点)。
+ * 朝向用四元数增量，不经此开关；若静止朝向正确、运动位移反了，应保持 false。
+ * 仅当 GLB 前向与 ROS X 前经坐标变换后仍水平相反时再改 true。
  */
-export const ODOM_DELTA_FLIP_XZ = true
+export const ODOM_DELTA_FLIP_XZ = false
 
 /**
  * 方案 B：GLB 静态位姿（Isaac 导出）与 odom 原点对齐。
