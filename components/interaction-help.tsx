@@ -30,7 +30,13 @@ const HELP_SECTIONS: HelpSection[] = [
   },
   {
     titleKey: 'help.section.scene',
-    items: ['help.scene.hierarchy', 'help.scene.inspector', 'help.scene.exportGltf'],
+    items: [
+      'help.scene.hierarchy',
+      'help.scene.inspector',
+      'help.scene.undo',
+      'help.scene.redo',
+      'help.scene.exportGltf',
+    ],
   },
   {
     titleKey: 'help.section.materialGraph',

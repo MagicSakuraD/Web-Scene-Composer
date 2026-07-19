@@ -12,6 +12,7 @@ import {
   selectedObjectReadyAtom,
   transformModeAtom,
 } from '@/lib/scene/atoms'
+import { simulateStatusAtom } from '@/lib/ros/atoms'
 import { tagGltfSceneNodeIds } from '@/lib/scene/gltf-hierarchy'
 import { enhanceGltfScene } from '@/lib/scene/enhance-gltf-scene'
 import type { SceneTreeNode } from '@/lib/scene/types'
@@ -49,6 +50,7 @@ function eulerToRad(degrees: [number, number, number]): [number, number, number]
 function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
   const { scene } = useGLTF(url)
   const nodes = useAtomValue(sceneNodesAtom)
+  const simulateStatus = useAtomValue(simulateStatusAtom)
   const clone = useMemo(() => {
     const c = scene.clone(true)
     // 先打 sceneNodeId，再增强（含 auto-instance）：proxy 会继承 tag
@@ -77,6 +79,26 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
       }
     })
   }, [clone, hiddenKey])
+
+  // atom → Object3D 变换同步：gltf-prim 由 gizmo 直接改对象、atom 只作持久化，
+  // 撤销 / 重做 / 检视器编辑需要据此把内部 prim 变换写回（拖拽中或已相等则跳过）。
+  // Simulate 连接期间跳过，避免与运行时轮子旋转 / 位姿动画打架；断开时再统一对齐。
+  useEffect(() => {
+    if (simulateStatus === 'connected') return
+    clone.traverse((obj) => {
+      const sid = obj.userData.sceneNodeId
+      if (typeof sid !== 'string') return
+      if (transformGizmoState.dragging && transformGizmoState.draggingNodeId === sid) return
+      const node = nodes[sid]
+      if (!node) return
+      const { position, rotation, scale } = node.transform
+      if (transformsEqual(obj, position, rotation, scale)) return
+      const [prx, pry, prz] = eulerToRad(rotation)
+      obj.position.set(position[0], position[1], position[2])
+      obj.rotation.set(prx, pry, prz)
+      obj.scale.set(scale[0], scale[1], scale[2])
+    })
+  }, [clone, nodes, simulateStatus])
 
   useEffect(() => {
     clone.traverse((obj) => {

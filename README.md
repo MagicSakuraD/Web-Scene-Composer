@@ -6,7 +6,7 @@
 
 **Web Scene Composer V1.0** 是面向 **Isaac Sim / ROS 2（Nova Carter）** 的浏览器端 **场景组装器与仿真联调前端**。
 
-在 Web 中组装 glTF 场景、连接 Foxglove Bridge，完成 **Nav2 导航发目标**、**Xbox 差速 `/cmd_vel` 遥控**，并实时查看相机、LiDAR 与规划路径。定位是联调与可视化，而不是替代 Blender 的建模或材质工作站。
+在 Web 中组装 glTF 场景、连接 Foxglove Bridge，完成 **Nav2 导航发目标**、**Xbox 差速 `/cmd_vel` 遥控**，并实时查看相机、LiDAR、规划路径与**代价地图**。定位是联调与可视化。
 
 > **联调为核 · 组装为本 · 材质为辅** — 轻量仿真侧数字孪生可视化（浏览器中的位姿 / 传感器 / 导航与 Isaac·Nav2 对齐），不是企业级数字孪生平台。
 
@@ -32,6 +32,14 @@ Waypoint Gizmo → 桥接 Service → `/navigate_to_pose`；视口叠加 `/plan`
 
 📺 [开发日志：Xbox 手柄控制演示](https://www.bilibili.com/video/BV1svN66uEoH/)
 
+### Nav2 代价地图叠加
+
+订阅 `/local_costmap/costmap`、`/global_costmap/costmap`（`nav_msgs/OccupancyGrid`）→ 视口地面伪彩热力叠加，面板 Toggle 分别控制局部 / 全局；配合大纲**可见性开关**隐藏遮挡几何，即可看清完整代价地图。
+
+[![代价地图演示](public/docs_images/costmap.jpg)](https://www.bilibili.com/video/BV1buKP65E1F/)
+
+📺 [开发日志：代价地图](https://www.bilibili.com/video/BV1buKP65E1F/)
+
 ### 材质节点预览（辅）
 
 WebGPU TSL Shader Graph，便于视口内快速试材质；完整 shading 仍建议在 Blender 等 DCC 中完成。
@@ -48,9 +56,10 @@ WebGPU TSL Shader Graph，便于视口内快速试材质；完整 shading 仍建
 |------|------|------|
 | **核心** | Simulate | Foxglove Bridge：`/chassis/odom`（底盘）、`/tf`（轮子 / 脚轮） |
 | **核心** | Nav2 导航目标 | Waypoint → Service 桥 → `/navigate_to_pose`；视口绘制全局 / 局部路径 |
+| **核心** | 代价地图可视化 | `/local_costmap`、`/global_costmap`（OccupancyGrid）→ 视口伪彩热力叠加，面板 Toggle 开关 |
 | **核心** | 差速驱动 | Xbox 手柄 → `/cmd_vel` |
 | **核心** | 传感器面板 | 摄像头（CompressedImage / H.264）、LiDAR（PointCloud2，视口叠加） |
-| **基础** | 场景组装 | glTF 导入、prim 树、Transform Gizmo、导出选中物体 `.glb` |
+| **基础** | 场景组装 | glTF 导入、prim 树、Transform Gizmo、大纲可见性开关、导出选中物体 `.glb` |
 | **辅助** | 材质节点 | TSL Shader Graph（探索用）；glTF 材质导出仍不完善（见下方） |
 | — | 检视器 / 项目浏览器 | Transform、灯光、Asset / Prim；资源列表 |
 
@@ -119,6 +128,8 @@ ros2 topic list
 | `/tf` | TF 树 | **Simulate** 订阅，驱动轮子 / 万向轮关节 |
 | `/plan` / `/plan_smoothed` | `nav_msgs/Path` | **Nav Goal** 全局路径（视口） |
 | `/local_plan` | `nav_msgs/Path` | **Nav Goal** 局部路径（视口） |
+| `/local_costmap/costmap` | `nav_msgs/OccupancyGrid` | **Nav Goal** 局部代价地图（Toggle 叠加） |
+| `/global_costmap/costmap` | `nav_msgs/OccupancyGrid` | **Nav Goal** 全局代价地图（Toggle 叠加） |
 | `/navigate_to_pose/_action/feedback` | action feedback | **Nav Goal** 剩余距离（hidden） |
 | `/navigate_to_pose/_action/status` | action status | **Nav Goal** 导航状态（hidden） |
 | `/parameter_events` | 参数事件 | — |
