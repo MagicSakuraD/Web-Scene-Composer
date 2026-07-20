@@ -70,7 +70,7 @@ export function instanceIdenticalMeshes(
     if (obj.userData.skipAutoInstance) return
     // 已是实例 / 选中轮廓等内部物体
     if (obj instanceof THREE.InstancedMesh) return
-    if (obj.userData.isSelectionOutline) return
+    if (obj.userData.isSelectionBox || obj.userData.isSelectionOutline) return
 
     const key = meshKey(obj)
     const list = groups.get(key)

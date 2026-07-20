@@ -9,12 +9,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { viewportRenderQualityAtom } from '@/lib/viewport/atoms'
 import { VIEWPORT_WEBGPU_FEATURES, VISUAL_QUALITY_PRESETS } from '@/lib/viewport/visual-config'
 
-/**
- * WebGPU 轻量后处理：仅 TSL Bloom。
- * - 不用 @react-three/postprocessing（仅 WebGL）
- * - 不用 N8AO / DOF / MSAA（仓库场景易 Device Lost）
- * - useFrame priority>0：R3F 跳过默认 gl.render，由 RenderPipeline 接管
- */
+/** WebGPU 后处理：仅 TSL Bloom。选中高亮由 SelectionBoundingBox（AABB 线框）负责。 */
 export function ViewportPostProcessing() {
   const enabled = VIEWPORT_WEBGPU_FEATURES.postProcessing
   const quality = useAtomValue(viewportRenderQualityAtom)
@@ -31,6 +26,7 @@ export function ViewportPostProcessing() {
     try {
       const scenePass = pass(scene, camera)
       const sceneColor = scenePass.getTextureNode('output')
+
       const bloomPass = bloom(
         sceneColor,
         bloomCfg.intensity,

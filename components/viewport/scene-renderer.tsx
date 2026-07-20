@@ -24,7 +24,7 @@ import {
 } from '@/lib/scene/object-registry'
 import { TransformGizmo, transformsEqual } from './transform-gizmo'
 import { transformGizmoState } from '@/lib/viewport/transform-gizmo-state'
-import { SelectionOutline } from './selection-outline'
+import { SelectionBoundingBox } from './selection-bounding-box'
 import { RuntimeRobotSync } from './runtime-robot-sync'
 import { LidarPointCloud } from './lidar-point-cloud'
 import { NavPathLines } from './nav-path-lines'
@@ -50,6 +50,8 @@ function eulerToRad(degrees: [number, number, number]): [number, number, number]
 function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
   const { scene } = useGLTF(url)
   const nodes = useAtomValue(sceneNodesAtom)
+  const selectedId = useAtomValue(selectedNodeIdAtom)
+  const bumpObjectReady = useSetAtom(selectedObjectReadyAtom)
   const simulateStatus = useAtomValue(simulateStatusAtom)
   const clone = useMemo(() => {
     const c = scene.clone(true)
@@ -101,25 +103,34 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
   }, [clone, nodes, simulateStatus])
 
   useEffect(() => {
+    let shouldRefreshSelection = selectedId === assetRootId
+
+    registerSceneObject(assetRootId, clone)
+    registerHighlightMeshes(assetRootId, clone)
+
     clone.traverse((obj) => {
       if (typeof obj.userData.sceneNodeId === 'string') {
         registerSceneObject(obj.userData.sceneNodeId, obj)
-        // 实例化后的 proxy 无 Mesh，高亮挂在整个 asset 上即可
-        if (!(obj.userData.demotedFromMesh && obj.userData.autoInstancedMesh)) {
-          registerHighlightMeshes(obj.userData.sceneNodeId, obj)
+        registerHighlightMeshes(obj.userData.sceneNodeId, obj)
+        if (selectedId === obj.userData.sceneNodeId) {
+          shouldRefreshSelection = true
         }
       }
     })
-    registerHighlightMeshes(assetRootId, clone)
+
+    if (shouldRefreshSelection) {
+      bumpObjectReady((n) => n + 1)
+    }
 
     return () => {
+      unregisterSceneObject(assetRootId)
       clone.traverse((obj) => {
         if (typeof obj.userData.sceneNodeId === 'string') {
           unregisterSceneObject(obj.userData.sceneNodeId)
         }
       })
     }
-  }, [clone, assetRootId])
+  }, [clone, assetRootId, selectedId, bumpObjectReady])
 
   return (
     <>
@@ -140,8 +151,12 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
     if (!obj) return
     obj.userData.sceneNodeId = node.type !== 'group' && node.type !== 'ground' ? node.id : undefined
     nodeRefs.set(node.id, obj)
-    registerSceneObject(node.id, obj)
-    registerHighlightMeshes(node.id, obj)
+
+    // asset-ref 的可渲染根由 GltfAsset clone 注册；此处跳过空 wrapper group
+    if (node.type !== 'asset-ref') {
+      registerSceneObject(node.id, obj)
+      registerHighlightMeshes(node.id, obj)
+    }
 
     if (selectedId === node.id) {
       bumpObjectReady((n) => n + 1)
@@ -149,7 +164,9 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
 
     return () => {
       nodeRefs.delete(node.id)
-      unregisterSceneObject(node.id)
+      if (node.type !== 'asset-ref') {
+        unregisterSceneObject(node.id)
+      }
     }
   }, [node.id, node.type, selectedId, bumpObjectReady])
 
@@ -314,7 +331,7 @@ export function SceneRenderer() {
         <SceneNodeObject key={node.id} node={node} />
       ))}
       <SelectionObjectReady />
-      <SelectionOutline />
+      <SelectionBoundingBox />
       <SelectedGizmo />
     </>
   )

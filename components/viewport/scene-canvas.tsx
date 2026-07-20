@@ -10,6 +10,7 @@ import { SceneRenderer } from './scene-renderer'
 import { ViewportEffects } from './viewport-effects'
 import { ViewportToneMapping } from './viewport-tone-mapping'
 import { ViewportPostProcessing } from './viewport-post-processing'
+import { ViewportShading } from './viewport-shading'
 import { ViewportPicker } from './viewport-picker'
 import { ViewportNavigation } from './viewport-navigation'
 import { CANVAS_GL_CONFIG, VIEWPORT_SHADOW_CONFIG, VIEWPORT_WEBGPU_FEATURES } from '@/lib/viewport/visual-config'
@@ -79,6 +80,7 @@ export function SceneCanvas() {
       <Suspense fallback={null}>
         <ViewportToneMapping />
         <ViewportEffects />
+        <ViewportShading />
         <SceneRenderer />
         {VIEWPORT_WEBGPU_FEATURES.postProcessing ? <ViewportPostProcessing /> : null}
       </Suspense>

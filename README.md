@@ -59,7 +59,7 @@ WebGPU TSL Shader Graph，便于视口内快速试材质；完整 shading 仍建
 | **核心** | 代价地图可视化 | `/local_costmap`、`/global_costmap`（OccupancyGrid）→ 视口伪彩热力叠加，面板 Toggle 开关 |
 | **核心** | 差速驱动 | Xbox 手柄 → `/cmd_vel` |
 | **核心** | 传感器面板 | 摄像头（CompressedImage / H.264）、LiDAR（PointCloud2，视口叠加） |
-| **基础** | 场景组装 | glTF 导入、prim 树、Transform Gizmo、大纲可见性开关、导出选中物体 `.glb` |
+| **基础** | 场景组装 | glTF 导入、prim 树、Transform Gizmo、视口着色（Shaded / Solid / Wireframe / Normals）、大纲可见性开关、导出选中物体 `.glb` |
 | **辅助** | 材质节点 | TSL Shader Graph（探索用）；glTF 材质导出仍不完善（见下方） |
 | — | 检视器 / 项目浏览器 | Transform、灯光、Asset / Prim；资源列表 |
 

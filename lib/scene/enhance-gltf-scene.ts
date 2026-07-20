@@ -68,7 +68,7 @@ export function enhanceGltfScene(root: THREE.Object3D): void {
 
   root.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return
-    if (obj.userData.isSelectionOutline) return
+    if (obj.userData.isSelectionBox || obj.userData.isSelectionOutline) return
 
     const isFloorLike = FLOOR_NAME.test(obj.name)
     applyShadowPolicy(obj, isFloorLike)

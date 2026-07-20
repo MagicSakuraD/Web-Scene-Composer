@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronRight, ChevronDown, Download, Eye, EyeOff, Plus, Search } from 'lucide-react'
+import { ChevronRight, ChevronDown, Download, Eye, EyeOff, Search } from 'lucide-react'
 import { useCallback, useEffect } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
@@ -18,7 +18,6 @@ import {
   downloadSelectedObjectGltf,
   SelectionGltfExportError,
 } from '@/lib/scene/export-selected-gltf'
-import { AddObjectMenu } from '@/components/add-object-menu'
 import { openCreateContextMenu } from '@/components/create-context-menu'
 import { useI18n } from '@/hooks/use-i18n'
 import type { MessageKey } from '@/lib/i18n/messages'
@@ -229,14 +228,6 @@ export function SceneHierarchy() {
         >
           <Download className="h-4 w-4" />
         </button>
-        <AddObjectMenu>
-          <button
-            className="p-1.5 rounded hover:bg-accent text-muted-foreground"
-            title={t('sceneHierarchy.create')}
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        </AddObjectMenu>
       </div>
     </div>
   )

@@ -54,7 +54,9 @@ function sanitizeCloneForExport(root: THREE.Object3D) {
 
   root.traverse((obj) => {
     if (
+      obj.userData?.isSelectionBox ||
       obj.userData?.isSelectionOutline ||
+      obj.name === '__wsc_selection_bbox__' ||
       obj.name === '__wsc_selection_outline__' ||
       obj instanceof THREE.Light ||
       obj instanceof THREE.Camera ||

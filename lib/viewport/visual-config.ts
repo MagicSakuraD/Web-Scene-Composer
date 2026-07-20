@@ -160,7 +160,7 @@ export const VIEWPORT_WEBGPU_FEATURES = {
   /** drei Environment IBL（PMREM）；若异常可关 */
   environmentIbl: true,
   /**
-   * WebGPU TSL Bloom（轻量）。关掉 N8AO/DOF/MSAA。
+   * WebGPU TSL Bloom（轻量）。选中高亮为 AABB 线框（SelectionBoundingBox）。
    * true 时由 RenderPipeline 接管渲染（R3F priority>0 会跳过默认 gl.render）。
    */
   postProcessing: true,

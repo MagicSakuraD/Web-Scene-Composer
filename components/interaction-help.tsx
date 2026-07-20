@@ -22,6 +22,7 @@ const HELP_SECTIONS: HelpSection[] = [
       'help.viewport.rmbFly',
       'help.viewport.frame',
       'help.viewport.contextMenu',
+      'help.viewport.shading',
     ],
   },
   {
