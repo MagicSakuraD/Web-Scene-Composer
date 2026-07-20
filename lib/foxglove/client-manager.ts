@@ -22,7 +22,6 @@ import {
   type RosPoseStamped,
 } from '@/lib/foxglove/ros-serialization'
 import {
-  getH264Decoder,
   releaseAllH264Decoders,
   releaseH264Decoder,
 } from '@/lib/ros/h264-webcodecs-decoder'
@@ -452,26 +451,9 @@ class FoxgloveBridgeManager {
     const msg = parseCompressedImageMessage(bytes)
     if (!msg || msg.data.length === 0) return
 
-    const format = msg.format.toLowerCase()
-    if (!format.includes('h264') && !format.includes('avc')) {
-      if (process.env.NODE_ENV === 'development') {
-        console.warn(`[Camera] 仅支持 H.264 CompressedImage，收到 format="${msg.format}" @ ${sub.topic}`)
-      }
-      return
-    }
-
-    const decoded = await getH264Decoder(sub.topic).decode(msg.data)
-    if (!decoded) return
-
-    const frame: DecodedCameraFrame = {
-      width: decoded.width,
-      height: decoded.height,
-      encoding: msg.format,
-      stampSec: msg.header.stamp.sec,
-      stampNanosec: msg.header.stamp.nanosec,
-      frameId: msg.header.frame_id,
-      bitmap: decoded.bitmap,
-    }
+    const { decodeCompressedImageMessage } = await import('@/lib/ros/image-decoder')
+    const frame = await decodeCompressedImageMessage(sub.topic, msg)
+    if (!frame) return
 
     for (const cb of sub.callbacks) {
       cb(sub.topic, frame)

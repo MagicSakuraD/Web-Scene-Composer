@@ -17,7 +17,7 @@ import {
   Navigation,
   X,
 } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { projectAssetsAtom } from '@/lib/scene/atoms'
 import {
@@ -37,7 +37,9 @@ import { LidarRuntime } from '@/components/panels/lidar-runtime'
 import { NavGoalPanel } from '@/components/panels/nav-goal-panel'
 import { NavGoalRuntime } from '@/components/panels/nav-goal-runtime'
 import { ConsolePanel } from '@/components/panels/console-panel'
+import { TimelineBar } from '@/components/playback/timeline-bar'
 import { useI18n } from '@/hooks/use-i18n'
+import { appModeAtom } from '@/lib/playback/atoms'
 import { panelNameKey } from '@/lib/i18n/panel-messages'
 import { cn } from '@/lib/utils'
 
@@ -67,9 +69,12 @@ interface ProjectBrowserProps {
   onToggleCollapse: () => void
 }
 
+const PLAYBACK_TAB_TYPES = new Set(['console', 'camera-viewer', 'lidar-viewer'])
+
 export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowserProps) {
   const [tabs, setTabs] = useAtom(bottomPanelTabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeBottomTabIdAtom)
+  const appMode = useAtomValue(appModeAtom)
   const { t } = useI18n()
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const assets = useAtomValue(projectAssetsAtom)
@@ -77,6 +82,29 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
   const importToLibraryOnly = useRef(false)
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
+  const visibleTabs =
+    appMode === 'playback'
+      ? tabs.filter((tab) => PLAYBACK_TAB_TYPES.has(tab.type))
+      : tabs
+
+  useEffect(() => {
+    if (appMode !== 'playback') return
+    setTabs((prev) => {
+      const playbackTypes: BottomPanelTab['type'][] = ['camera-viewer', 'lidar-viewer', 'console']
+      const missing = playbackTypes.filter((type) => !prev.some((tab) => tab.type === type))
+      if (missing.length === 0) return prev
+      const additions = missing.map((type) => {
+        const nameKey = panelNameKey(type)
+        return {
+          id: `${type}-playback`,
+          type,
+          name: nameKey ? t(nameKey) : type,
+        }
+      })
+      return [...prev, ...additions]
+    })
+  }, [appMode, setTabs, t])
+
   const hasDiffDriveTab = tabs.some((t) => t.type === 'diff-drive')
   const hasLidarTab = tabs.some((t) => t.type === 'lidar-viewer')
   const hasNavGoalTab = tabs.some((t) => t.type === 'nav-goal')
@@ -102,15 +130,16 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
   }
 
   return (
-    <div className="h-full flex flex-col bg-sidebar">
-      {hasDiffDriveTab && <DiffDriveRuntime />}
+    <div className="h-full flex flex-col bg-muted/20">
+      <TimelineBar />
+      {appMode === 'compose' && hasDiffDriveTab && <DiffDriveRuntime />}
       {hasLidarTab && <LidarRuntime />}
-      {hasNavGoalTab && <NavGoalRuntime />}
+      {appMode === 'compose' && hasNavGoalTab && <NavGoalRuntime />}
       <GltfFileInput ref={fileInputRef} onChange={handleFileChange} />
 
       <div className="relative z-20 flex items-center border-b border-border bg-panel-header shrink-0">
         <div className="flex-1 flex items-center gap-1 px-2 py-1.5 overflow-x-auto min-w-0">
-          {tabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const Icon = tabIcon(tab.type)
             const closable = tab.type !== 'project-browser'
             const nameKey = panelNameKey(tab.type)
@@ -150,11 +179,13 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
         </button>
       </div>
 
-      {!isCollapsed && activeTab && (
+      {!isCollapsed && activeTab && visibleTabs.some((t) => t.id === activeTab.id) && (
         <div
           className={cn(
             'relative z-0 flex-1 min-h-0',
-            activeTab.type === 'camera-viewer' || activeTab.type === 'material-graph'
+            activeTab.type === 'camera-viewer' ||
+              activeTab.type === 'material-graph' ||
+              activeTab.type === 'lidar-viewer'
               ? 'overflow-hidden flex flex-col'
               : 'overflow-y-auto overflow-x-hidden',
           )}

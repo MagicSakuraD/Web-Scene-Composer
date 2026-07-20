@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Camera, Circle, Plus, X } from 'lucide-react'
 import {
   Group as PanelGroup,
@@ -12,28 +12,51 @@ import {
   cameraViewerTopicsAtom,
   DEFAULT_CAMERA_COMPRESSED_TOPICS,
   FOXGLOVE_WS_URL,
-  simulateStatusAtom,
 } from '@/lib/ros/atoms'
+import {
+  dataSourceActiveAtom,
+  dataSourceModeAtom,
+  mcapTopicsAtom,
+  topicVisibilityAtom,
+} from '@/lib/playback/atoms'
 import { foxgloveManager } from '@/lib/foxglove/client-manager'
 import { cameraFrameStore, type CameraFrameSnapshot } from '@/lib/ros/camera-frame-store'
-import { resolvePreferredCameraTopic } from '@/lib/foxglove/ros-serialization'
+import {
+  isCameraImageTopic,
+  preferCompressedCameraTopics,
+  resolvePreferredCameraTopic,
+} from '@/lib/foxglove/ros-serialization'
 import { useCameraViewer } from '@/hooks/use-camera-viewer'
 import { cn } from '@/lib/utils'
 
 const EMPTY_TOPICS: readonly string[] = []
 
 function useAvailableCameraTopics() {
-  const status = useAtomValue(simulateStatusAtom)
-  const connected = status === 'connected'
+  const dataSourceMode = useAtomValue(dataSourceModeAtom)
+  const dataSourceActive = useAtomValue(dataSourceActiveAtom)
+  const mcapTopics = useAtomValue(mcapTopicsAtom)
 
-  return useSyncExternalStore(
+  const liveTopics = useSyncExternalStore(
     (onStoreChange) => {
-      if (!connected) return () => {}
+      if (dataSourceMode !== 'live' || !dataSourceActive) return () => {}
       return foxgloveManager.onTopicsChanged(onStoreChange)
     },
-    () => (connected ? foxgloveManager.getCameraImageTopics() : EMPTY_TOPICS),
+    () =>
+      dataSourceMode === 'live' && dataSourceActive
+        ? foxgloveManager.getCameraImageTopics()
+        : EMPTY_TOPICS,
     () => EMPTY_TOPICS,
   )
+
+  if (dataSourceMode === 'replay' && dataSourceActive) {
+    return preferCompressedCameraTopics(
+      mcapTopics
+        .filter((t) => isCameraImageTopic(t.topic, t.schemaName))
+        .map((t) => t.topic),
+    )
+  }
+
+  return liveTopics
 }
 
 function CameraTile({
@@ -115,9 +138,11 @@ function CameraTile({
 function CameraPanelGrid({
   topics,
   onRemove,
+  isReplay,
 }: {
   topics: string[]
   onRemove: (topic: string) => void
+  isReplay?: boolean
 }) {
   if (topics.length === 0) {
     return (
@@ -125,7 +150,9 @@ function CameraPanelGrid({
         <Camera className="h-10 w-10 opacity-40" />
         <p className="text-sm">尚未添加摄像头话题</p>
         <p className="text-xs text-center max-w-sm">
-          在上方选择压缩话题（如 {DEFAULT_CAMERA_COMPRESSED_TOPICS[0]}），点击添加。
+          {isReplay
+            ? '在左侧 Topics 树中点击图像话题旁的眼睛图标以启用。'
+            : `在上方选择压缩话题（如 ${DEFAULT_CAMERA_COMPRESSED_TOPICS[0]}），点击添加。`}
         </p>
       </div>
     )
@@ -160,9 +187,12 @@ function CameraPanelGrid({
 export function CameraViewerPanel() {
   const [selectedTopics, setSelectedTopics] = useAtom(cameraViewerTopicsAtom)
   const [topicInput, setTopicInput] = useState('')
-  const simulateStatus = useAtomValue(simulateStatusAtom)
+  const dataSourceActive = useAtomValue(dataSourceActiveAtom)
+  const dataSourceMode = useAtomValue(dataSourceModeAtom)
+  const setTopicVisibility = useSetAtom(topicVisibilityAtom)
   const availableTopics = useAvailableCameraTopics()
-  const simActive = simulateStatus === 'connected'
+  const simActive = dataSourceActive
+  const isReplay = dataSourceMode === 'replay'
 
   useCameraViewer(selectedTopics, true)
 
@@ -177,6 +207,11 @@ export function CameraViewerPanel() {
     (raw?: string) => {
       const resolved = resolvePreferredCameraTopic(raw ?? topicInput, availableTopics)
       if (!resolved) return
+      if (isReplay) {
+        setTopicVisibility((prev) => ({ ...prev, [resolved]: true }))
+        setTopicInput('')
+        return
+      }
       if (selectedTopics.includes(resolved)) {
         setTopicInput('')
         return
@@ -184,11 +219,19 @@ export function CameraViewerPanel() {
       setSelectedTopics([...selectedTopics, resolved])
       setTopicInput('')
     },
-    [availableTopics, selectedTopics, setSelectedTopics, topicInput],
+    [
+      availableTopics,
+      isReplay,
+      selectedTopics,
+      setSelectedTopics,
+      setTopicVisibility,
+      topicInput,
+    ],
   )
 
   /** 已选 raw 话题在 Bridge 有 compressed 时自动升级 */
   useEffect(() => {
+    if (isReplay) return
     if (availableTopics.length === 0 || selectedTopics.length === 0) return
     const upgraded = selectedTopics.map((t) => resolvePreferredCameraTopic(t, availableTopics))
     const changed = upgraded.some((t, i) => t !== selectedTopics[i])
@@ -198,14 +241,19 @@ export function CameraViewerPanel() {
       if (!upgraded.includes(old)) cameraFrameStore.clearTopic(old)
     }
     setSelectedTopics(upgraded)
-  }, [availableTopics, selectedTopics, setSelectedTopics])
+  }, [availableTopics, isReplay, selectedTopics, setSelectedTopics])
 
   const removeTopic = useCallback(
     (topic: string) => {
+      if (isReplay) {
+        setTopicVisibility((prev) => ({ ...prev, [topic]: false }))
+        cameraFrameStore.clearTopic(topic)
+        return
+      }
       setSelectedTopics(selectedTopics.filter((t) => t !== topic))
       cameraFrameStore.clearTopic(topic)
     },
-    [selectedTopics, setSelectedTopics],
+    [isReplay, selectedTopics, setSelectedTopics, setTopicVisibility],
   )
 
   return (
@@ -216,7 +264,9 @@ export function CameraViewerPanel() {
           <div>
             <h3 className="text-sm font-medium">摄像头画面</h3>
             <p className="text-[10px] text-muted-foreground">
-              sensor_msgs/CompressedImage (H.264) · WebCodecs 解码
+              {isReplay
+                ? '在左侧 Topics 点眼睛启用图像话题'
+                : 'sensor_msgs/CompressedImage (H.264) · WebCodecs 解码'}
             </p>
           </div>
         </div>
@@ -224,79 +274,103 @@ export function CameraViewerPanel() {
         <div
           className={cn(
             'rounded-md border px-3 py-2 text-xs flex items-center gap-2',
-            simActive
+            simActive && selectedTopics.length > 0
               ? 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400'
-              : 'border-border bg-muted/30 text-muted-foreground',
+              : simActive
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                : 'border-border bg-muted/30 text-muted-foreground',
           )}
         >
-          <Circle className={cn('h-2 w-2 fill-current', simActive ? 'text-green-500' : 'text-muted-foreground')} />
-          {simActive
-            ? `Foxglove 已连接 · 发现 ${availableTopics.length} 个图像话题`
-            : `请先点击标题栏 Simulate 连接 Foxglove Bridge (${FOXGLOVE_WS_URL})`}
+          <Circle
+            className={cn(
+              'h-2 w-2 fill-current',
+              simActive && selectedTopics.length > 0
+                ? 'text-green-500'
+                : simActive
+                  ? 'text-amber-500'
+                  : 'text-muted-foreground',
+            )}
+          />
+          {isReplay
+            ? selectedTopics.length > 0
+              ? `已启用 ${selectedTopics.length} 路图像 · 共 ${availableTopics.length} 个图像话题`
+              : `未启用图像话题 — 在 Topics 树中点击眼睛（共 ${availableTopics.length} 个）`
+            : simActive
+              ? `Foxglove 已连接 · 发现 ${availableTopics.length} 个图像话题`
+              : `请先点击标题栏 Simulate 连接 Foxglove Bridge (${FOXGLOVE_WS_URL})`}
         </div>
 
-        <div className="flex gap-2">
-          <div className="flex-1 relative">
-            <input
-              type="text"
-              list="camera-topic-suggestions"
-              value={topicInput}
-              placeholder="/front_stereo_camera/left/image_raw/compressed"
-              className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
-              onChange={(e) => setTopicInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') addTopic()
-              }}
-            />
-            <datalist id="camera-topic-suggestions">
-              {availableTopics.map((t) => (
-                <option key={t} value={t} />
-              ))}
-            </datalist>
-          </div>
-          <button
-            type="button"
-            className="flex items-center gap-1 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs hover:opacity-90 shrink-0"
-            onClick={() => addTopic()}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            添加
-          </button>
-        </div>
-
-        {suggestions.length > 0 && topicInput.trim() && (
-          <div className="flex flex-wrap gap-1">
-            {suggestions.slice(0, 6).map((t) => (
+        {!isReplay && (
+          <>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  list="camera-topic-suggestions"
+                  value={topicInput}
+                  placeholder="/front_stereo_camera/left/image_raw/compressed"
+                  className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
+                  onChange={(e) => setTopicInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') addTopic()
+                  }}
+                />
+                <datalist id="camera-topic-suggestions">
+                  {availableTopics.map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
+              </div>
               <button
-                key={t}
                 type="button"
-                className="text-[10px] font-mono px-2 py-0.5 rounded border border-border hover:bg-accent truncate max-w-full"
-                onClick={() => addTopic(t)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs hover:opacity-90 shrink-0"
+                onClick={() => addTopic()}
               >
-                {t}
+                <Plus className="h-3.5 w-3.5" />
+                添加
               </button>
-            ))}
-          </div>
-        )}
+            </div>
 
-        {availableTopics.length > 0 && selectedTopics.length === 0 && (
-          <div className="flex flex-wrap gap-1">
-            <span className="text-[10px] text-muted-foreground w-full mb-0.5">快捷添加（H.264 compressed）：</span>
-            {(availableTopics.length > 0 ? availableTopics : DEFAULT_CAMERA_COMPRESSED_TOPICS).map((t) => (
-              <button
-                key={t}
-                type="button"
-                className="text-[10px] font-mono px-2 py-0.5 rounded border border-primary/30 text-primary hover:bg-primary/10"
-                onClick={() => addTopic(t)}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+            {suggestions.length > 0 && topicInput.trim() && (
+              <div className="flex flex-wrap gap-1">
+                {suggestions.slice(0, 6).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    className="text-[10px] font-mono px-2 py-0.5 rounded border border-border hover:bg-accent truncate max-w-full"
+                    onClick={() => addTopic(t)}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {availableTopics.length > 0 && selectedTopics.length === 0 && (
+              <div className="flex flex-wrap gap-1">
+                <span className="text-[10px] text-muted-foreground w-full mb-0.5">
+                  快捷添加（H.264 compressed）：
+                </span>
+                {(availableTopics.length > 0
+                  ? availableTopics
+                  : DEFAULT_CAMERA_COMPRESSED_TOPICS
+                ).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    className="text-[10px] font-mono px-2 py-0.5 rounded border border-primary/30 text-primary hover:bg-primary/10"
+                    onClick={() => addTopic(t)}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      <CameraPanelGrid topics={selectedTopics} onRemove={removeTopic} />
+      <CameraPanelGrid topics={selectedTopics} onRemove={removeTopic} isReplay={isReplay} />
     </div>
   )
 }

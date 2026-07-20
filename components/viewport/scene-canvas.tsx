@@ -6,6 +6,8 @@ import { OrbitControls, GizmoHelper, GizmoViewport } from '@react-three/drei'
 import { MOUSE } from 'three'
 import * as THREE from 'three'
 import { WebGPURenderer } from 'three/webgpu'
+import { useAtomValue } from 'jotai'
+import { appModeAtom } from '@/lib/playback/atoms'
 import { SceneRenderer } from './scene-renderer'
 import { ViewportEffects } from './viewport-effects'
 import { ViewportToneMapping } from './viewport-tone-mapping'
@@ -67,13 +69,19 @@ async function createViewportRenderer(
   return renderer
 }
 
-/** Blender-style: 左键选择，中键 Orbit 旋转，滚轮缩放 */
+/**
+ * Compose：Blender 式（左键拾取，中键旋转）
+ * Playback：Foxglove 式（左键旋转、右键平移、中键/滚轮缩放）
+ */
 export function SceneCanvas() {
+  const appMode = useAtomValue(appModeAtom)
+  const isPlayback = appMode === 'playback'
+
   return (
     <Canvas
       shadows={resolveShadowProp()}
       gl={createViewportRenderer}
-      camera={{ position: [6, 5, 8], fov: 50 }}
+      camera={{ position: [6, 5, 8], fov: 50, near: 0.1, far: 5000 }}
       className="absolute inset-0"
       dpr={[1, 1.5]}
     >
@@ -84,16 +92,26 @@ export function SceneCanvas() {
         <SceneRenderer />
         {VIEWPORT_WEBGPU_FEATURES.postProcessing ? <ViewportPostProcessing /> : null}
       </Suspense>
-      <ViewportPicker />
+      {!isPlayback && <ViewportPicker />}
       <ViewportNavigation />
       <OrbitControls
         makeDefault
-        enableDamping={false}
-        mouseButtons={{
-          LEFT: undefined as unknown as MOUSE,
-          MIDDLE: MOUSE.ROTATE,
-          RIGHT: undefined as unknown as MOUSE,
-        }}
+        enableDamping={isPlayback}
+        dampingFactor={0.08}
+        maxDistance={2000}
+        mouseButtons={
+          isPlayback
+            ? {
+                LEFT: MOUSE.ROTATE,
+                MIDDLE: MOUSE.DOLLY,
+                RIGHT: MOUSE.PAN,
+              }
+            : {
+                LEFT: undefined as unknown as MOUSE,
+                MIDDLE: MOUSE.ROTATE,
+                RIGHT: undefined as unknown as MOUSE,
+              }
+        }
       />
       <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
         <GizmoViewport axisColors={['#ef4444', '#22c55e', '#3b82f6']} labelColor="white" />

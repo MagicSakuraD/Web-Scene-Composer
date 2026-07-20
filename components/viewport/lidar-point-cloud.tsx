@@ -4,7 +4,8 @@ import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useAtomValue } from 'jotai'
 import * as THREE from 'three'
-import { lidarDisplayAtom, simulateStatusAtom } from '@/lib/ros/atoms'
+import { lidarDisplayAtom } from '@/lib/ros/atoms'
+import { dataSourceActiveAtom } from '@/lib/playback/atoms'
 import {
   LIDAR_MAX_POINTS,
   LIDAR_POSITION_BUFFER,
@@ -29,7 +30,7 @@ import { resolveRobotAnimRoot } from '@/lib/ros/caster-swivel'
  */
 export function LidarPointCloud() {
   const config = useAtomValue(lidarDisplayAtom)
-  const status = useAtomValue(simulateStatusAtom)
+  const dataSourceActive = useAtomValue(dataSourceActiveAtom)
   const geometryRef = useRef<THREE.BufferGeometry>(null)
   const pointsRef = useRef<THREE.Points>(null)
   const mountGroupRef = useRef<THREE.Group>(null)
@@ -40,7 +41,7 @@ export function LidarPointCloud() {
 
   const { material, uniforms } = useMemo(() => createLidarTslMaterial(), [])
 
-  const simActive = status === 'connected'
+  const simActive = dataSourceActive
 
   useFrame(() => {
     if (!config.visible || !simActive) return

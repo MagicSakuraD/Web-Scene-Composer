@@ -48,6 +48,12 @@ WebGPU TSL Shader Graph，便于视口内快速试材质；完整 shading 仍建
 
 📺 [开发日志：材质预览演示](https://www.bilibili.com/video/BV1PBN66ME8g/)
 
+### MCAP 离线回放
+
+标题栏切换到 **数据回放** → **打开 MCAP**，加载本地 `.mcap`（如 nuScenes）。左侧 Topics 默认隐藏，点眼睛启用话题；点云在 3D 视口叠加，摄像头在底部多画面网格；时间轴支持播放 / 暂停 / 重播与变速。支持 `foxglove.PointCloud` / `CompressedImage`（protobuf）及 lz4 压缩。
+
+![MCAP 离线回放](public/docs_images/mcap.png)
+
 ---
 
 ## 功能概览
@@ -59,6 +65,7 @@ WebGPU TSL Shader Graph，便于视口内快速试材质；完整 shading 仍建
 | **核心** | 代价地图可视化 | `/local_costmap`、`/global_costmap`（OccupancyGrid）→ 视口伪彩热力叠加，面板 Toggle 开关 |
 | **核心** | 差速驱动 | Xbox 手柄 → `/cmd_vel` |
 | **核心** | 传感器面板 | 摄像头（CompressedImage / H.264）、LiDAR（PointCloud2，视口叠加） |
+| **核心** | MCAP 离线回放 | 本地 `.mcap`：Topics 显隐、时间轴、点云 / 相机回放（Compose / Playback 双模式） |
 | **基础** | 场景组装 | glTF 导入、prim 树、Transform Gizmo、视口着色（Shaded / Solid / Wireframe / Normals）、大纲可见性开关、导出选中物体 `.glb` |
 | **辅助** | 材质节点 | TSL Shader Graph（探索用）；glTF 材质导出仍不完善（见下方） |
 | — | 检视器 / 项目浏览器 | Transform、灯光、Asset / Prim；资源列表 |
@@ -176,11 +183,14 @@ app/                    Next.js App Router
 components/
   viewport/             R3F 渲染、LiDAR、材质同步、路径可视化
   panels/               底部面板（相机、雷达、材质图、差速驱动、Nav Goal）
+  playback/             MCAP 回放：Topics 树、时间轴、帧检视
   scene-hierarchy.tsx   场景大纲（含选中物体 .glb 导出）
   inspector.tsx         右侧检视器
 lib/
   scene/                场景图、glTF 导入 / 选中导出
   ros/                  Foxglove WebSocket、话题与仿真状态
+  mcap/                 MCAP 加载、解压、protobuf 解码、回放控制器
+  playback/             回放状态（模式、时间轴、话题显隐）
   material-graph/       TSL 节点图编译（辅助）
   viewport/             渲染与 WebGPU 功能开关
 ros/carter_web_nav_bridge/   Nav2 Service 桥接说明与源码镜像
@@ -197,6 +207,7 @@ WebGPU 功能开关见 `lib/viewport/visual-config.ts` 中的 `VIEWPORT_WEBGPU_F
 - [@xyflow/react](https://reactflow.dev) — 材质节点图（辅助）
 - [Jotai](https://jotai.org) — 状态管理
 - [@foxglove/ws-protocol](https://github.com/foxglove/ws-protocol) — Foxglove Bridge 客户端
+- [@mcap/core](https://github.com/foxglove/mcap) · [@mcap/browser](https://github.com/foxglove/mcap) — MCAP 离线回放
 
 ---
 

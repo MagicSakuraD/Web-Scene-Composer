@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef } from 'react'
 import {
   PanelLeft,
   PanelRight,
@@ -8,6 +9,8 @@ import {
   Grid3x3,
   Sun,
   ChevronRight,
+  FileVideo,
+  Loader2,
 } from 'lucide-react'
 import { useAtom, useAtomValue } from 'jotai'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -18,11 +21,21 @@ import { breadcrumbAtom } from '@/lib/scene/atoms'
 import { FOXGLOVE_WS_URL } from '@/lib/ros/atoms'
 import { PROJECT_NAME } from '@/lib/scene/create-menu'
 import { useSimulate } from '@/hooks/use-simulate'
+import { useOpenMcap } from '@/hooks/use-open-mcap'
 import { useI18n } from '@/hooks/use-i18n'
 import {
   viewportDefaultLightsVisibleAtom,
   viewportGridVisibleAtom,
 } from '@/lib/viewport/atoms'
+import {
+  appModeAtom,
+  dataSourceModeAtom,
+  mcapFileNameAtom,
+  mcapLoadErrorAtom,
+  mcapLoadingAtom,
+  playbackPlayingAtom,
+} from '@/lib/playback/atoms'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 const GITHUB_REPO_URL = 'https://github.com/MagicSakuraD/Web-Scene-Composer'
@@ -56,30 +69,58 @@ export function TitleBar({
 }: TitleBarProps) {
   const breadcrumb = useAtomValue(breadcrumbAtom)
   const { status, error, toggleSimulate, isActive } = useSimulate()
+  const { openFile } = useOpenMcap()
   const { t } = useI18n()
+  const [appMode, setAppMode] = useAtom(appModeAtom)
+  const dataSourceMode = useAtomValue(dataSourceModeAtom)
+  const mcapFileName = useAtomValue(mcapFileNameAtom)
+  const mcapLoading = useAtomValue(mcapLoadingAtom)
+  const mcapError = useAtomValue(mcapLoadErrorAtom)
+  const playing = useAtomValue(playbackPlayingAtom)
   const [gridVisible, setGridVisible] = useAtom(viewportGridVisibleAtom)
   const [lightsVisible, setLightsVisible] = useAtom(viewportDefaultLightsVisibleAtom)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const statusLabel =
-    status === 'connecting'
-      ? t('titleBar.status.connecting')
-      : status === 'connected'
-        ? t('titleBar.status.connected')
-        : status === 'error'
-          ? t('titleBar.status.error')
-          : t('titleBar.status.ready')
+    dataSourceMode === 'replay'
+      ? playing
+        ? t('titleBar.status.playing')
+        : t('titleBar.status.replayReady')
+      : status === 'connecting'
+        ? t('titleBar.status.connecting')
+        : status === 'connected'
+          ? t('titleBar.status.connected')
+          : status === 'error'
+            ? t('titleBar.status.error')
+            : t('titleBar.status.ready')
 
   const statusColor =
-    status === 'connected'
-      ? 'text-green-600 dark:text-green-400'
-      : status === 'error'
-        ? 'text-red-500'
-        : status === 'connecting'
-          ? 'text-amber-500'
-          : 'text-green-600 dark:text-green-400'
+    dataSourceMode === 'replay'
+      ? 'text-sky-500'
+      : status === 'connected'
+        ? 'text-green-600 dark:text-green-400'
+        : status === 'error'
+          ? 'text-red-500'
+          : status === 'connecting'
+            ? 'text-amber-500'
+            : 'text-green-600 dark:text-green-400'
+
+  const onPickMcap = () => fileInputRef.current?.click()
 
   return (
     <div className="flex items-center h-11 px-2 bg-toolbar text-toolbar-foreground border-b border-border select-none">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".mcap"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) void openFile(file)
+          e.target.value = ''
+        }}
+      />
+
       <div className="flex items-center gap-1 ml-2">
         <button
           className={cn(
@@ -92,52 +133,94 @@ export function TitleBar({
           <PanelLeft className="h-4 w-4" />
         </button>
         <span className="ml-1 text-sm font-semibold text-foreground">{PROJECT_NAME}</span>
-        <span className="ml-2 text-xs text-muted-foreground px-1.5 py-0.5 rounded bg-accent/60">
-          {isActive ? t('titleBar.simulating') : t('titleBar.edited')}
-        </span>
+        <div className="ml-2 flex items-center rounded-md border border-border overflow-hidden text-[10px]">
+          <button
+            className={cn(
+              'px-2 py-0.5 transition-colors',
+              appMode === 'compose'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground hover:bg-accent/50',
+            )}
+            onClick={() => setAppMode('compose')}
+          >
+            {t('titleBar.mode.compose')}
+          </button>
+          <button
+            className={cn(
+              'px-2 py-0.5 transition-colors border-l border-border',
+              appMode === 'playback'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground hover:bg-accent/50',
+            )}
+            onClick={() => setAppMode('playback')}
+          >
+            {t('titleBar.mode.playback')}
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 flex items-center justify-center gap-3">
-        <button
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-opacity',
-            isActive
-              ? 'bg-destructive text-destructive-foreground hover:opacity-90'
-              : 'bg-primary text-primary-foreground hover:opacity-90',
-          )}
-          title={
-            isActive
-              ? t('titleBar.disconnectHint')
-              : t('titleBar.connectHint', { url: FOXGLOVE_WS_URL })
-          }
-          onClick={() => void toggleSimulate()}
-        >
-          {isActive ? (
-            <>
-              <Square className="h-3.5 w-3.5 fill-current" />
-              {t('titleBar.stop')}
-            </>
-          ) : (
-            <>
-              <Play className="h-3.5 w-3.5 fill-current" />
-              {t('titleBar.simulate')}
-            </>
-          )}
-        </button>
+      <div className="flex-1 flex items-center justify-center gap-3 min-w-0">
+        {appMode === 'compose' ? (
+          <button
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-opacity',
+              isActive
+                ? 'bg-destructive text-destructive-foreground hover:opacity-90'
+                : 'bg-primary text-primary-foreground hover:opacity-90',
+            )}
+            title={
+              isActive
+                ? t('titleBar.disconnectHint')
+                : t('titleBar.connectHint', { url: FOXGLOVE_WS_URL })
+            }
+            onClick={() => void toggleSimulate()}
+          >
+            {isActive ? (
+              <>
+                <Square className="h-3.5 w-3.5 fill-current" />
+                {t('titleBar.stop')}
+              </>
+            ) : (
+              <>
+                <Play className="h-3.5 w-3.5 fill-current" />
+                {t('titleBar.simulate')}
+              </>
+            )}
+          </button>
+        ) : (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 text-xs gap-1.5"
+            disabled={mcapLoading}
+            onClick={onPickMcap}
+          >
+            {mcapLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileVideo className="h-3.5 w-3.5" />
+            )}
+            {mcapFileName ? t('titleBar.openMcapAnother') : t('titleBar.openMcap')}
+          </Button>
+        )}
 
-        <div className="flex items-center gap-0.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-0.5 text-xs text-muted-foreground min-w-0">
           {breadcrumb.map((segment, i) => (
             <span key={segment} className="flex items-center gap-0.5">
               {i > 0 && <ChevronRight className="h-3 w-3" />}
-              <span className={i === breadcrumb.length - 1 ? 'text-foreground' : ''}>
+              <span className={cn('truncate', i === breadcrumb.length - 1 ? 'text-foreground' : '')}>
                 {segment}
               </span>
             </span>
           ))}
         </div>
 
-        <span className={cn('text-xs font-medium', statusColor)} title={error ?? undefined}>
+        <span
+          className={cn('text-xs font-medium truncate max-w-[200px]', statusColor)}
+          title={mcapError ?? error ?? undefined}
+        >
           {statusLabel}
+          {mcapFileName ? ` · ${mcapFileName}` : ''}
         </span>
       </div>
 
@@ -165,7 +248,7 @@ export function TitleBar({
           <Sun className="h-4 w-4" />
         </button>
         <div className="w-px h-5 bg-border mx-1" />
-        <AddObjectMenu />
+        {appMode === 'compose' && <AddObjectMenu />}
         <InteractionHelpButton />
         <a
           href={GITHUB_REPO_URL}

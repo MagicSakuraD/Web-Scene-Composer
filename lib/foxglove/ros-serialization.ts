@@ -162,13 +162,16 @@ export function isCameraImageTopic(topic: string, schemaName?: string): boolean 
   if (topic.includes('camera_info')) return false
   if (/\/out\/(theora|zstd|compressedDepth)/i.test(topic)) return false
 
+  if (schemaName === 'foxglove.CompressedImage' || schemaName?.includes('foxglove.CompressedImage')) {
+    return /image|camera|CAM_/i.test(topic)
+  }
   if (schemaName?.includes('CompressedImage')) {
-    return /camera|stereo/i.test(topic)
+    return true
   }
-  if (schemaName?.includes('Image')) {
-    return /image_raw/i.test(topic) && /camera|stereo/i.test(topic)
+  if (schemaName?.includes('Image') && !schemaName.includes('CompressedImage')) {
+    return /image_raw/i.test(topic) || /CAM_|camera|stereo/i.test(topic)
   }
-  return /image_raw(\/compressed)?$/i.test(topic) && /camera|stereo/i.test(topic)
+  return /image_raw(\/compressed)?$|image_rect_compressed$/i.test(topic) && /camera|stereo|CAM_/i.test(topic)
 }
 
 /** `/foo/image_raw` → `/foo/image_raw/compressed` */
@@ -321,11 +324,11 @@ export function decodePointCloud2(data: Uint8Array): DecodedPointCloud | null {
 
 export function isLidarPointCloudTopic(topic: string, schemaName?: string): boolean {
   if (schemaName) {
-    return schemaName.includes('PointCloud2')
+    return schemaName.includes('PointCloud2') || schemaName.includes('foxglove.PointCloud')
   }
   // 无 schema 时保守匹配，排除 costmap / occupancy 等非点云话题
   if (/costmap|occupancy|CostmapUpdate|_layer$/i.test(topic)) return false
-  return /lidar|point_cloud|\/points$|cost_cloud/i.test(topic)
+  return /lidar|LIDAR|point_cloud|\/points$|cost_cloud|RADAR/i.test(topic)
 }
 
 const poseStampedDefs = [

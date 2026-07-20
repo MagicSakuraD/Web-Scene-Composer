@@ -8,6 +8,9 @@ import {
   simulateLogsAtom,
   runtimeRobotNodeIdAtom,
 } from '@/lib/ros/atoms'
+import { dataSourceModeAtom } from '@/lib/playback/atoms'
+import { mcapReplayController } from '@/lib/mcap/mcap-replay-controller'
+import { playbackEngine } from '@/lib/playback/playback-engine'
 import { foxgloveManager } from '@/lib/foxglove/client-manager'
 import { appendSimulateLog } from '@/lib/ros/simulate-actions'
 import { odomSceneCalibration } from '@/lib/ros/odom-scene-calibration'
@@ -61,12 +64,20 @@ export function useSimulate() {
       setRuntimeRobot(null)
       setStatus('idle')
       setError(null)
+      getDefaultStore().set(dataSourceModeAtom, 'idle')
       pushLog({ level: 'info', message: 'Simulate 已停止' })
       return
     }
 
+    if (mcapReplayController.isLoaded) {
+      playbackEngine.pause()
+      mcapReplayController.close()
+      getDefaultStore().set(dataSourceModeAtom, 'idle')
+    }
+
     setStatus('connecting')
     setError(null)
+    getDefaultStore().set(dataSourceModeAtom, 'live')
     pushLog({ level: 'info', message: '正在连接 Foxglove Bridge…' })
 
     try {
@@ -90,6 +101,7 @@ export function useSimulate() {
       setRuntimeRobot(null)
       setStatus('error')
       setError(msg)
+      getDefaultStore().set(dataSourceModeAtom, 'idle')
       pushLog({ level: 'error', message: msg })
     }
   }, [status, pushLog, setStatus, setError, setRuntimeRobot, resolveRobotNodeId])

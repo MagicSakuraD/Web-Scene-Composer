@@ -4,7 +4,7 @@ import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useAtomValue } from 'jotai'
 import * as THREE from 'three'
-import { simulateStatusAtom } from '@/lib/ros/atoms'
+import { dataSourceActiveAtom } from '@/lib/playback/atoms'
 import { applyWheelJointsFromTf, resetTfJointCalibration } from '@/lib/ros/apply-tf-joints'
 import { odomSceneCalibration } from '@/lib/ros/odom-scene-calibration'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
@@ -29,14 +29,14 @@ const _displayQuat = new THREE.Quaternion()
  * - 四轮滚动 ← odom twist 本地 Dead Reckoning（高频、顺滑）
  */
 export function RuntimeRobotSync() {
-  const status = useAtomValue(simulateStatusAtom)
+  const dataSourceActive = useAtomValue(dataSourceActiveAtom)
   const boundTargetRef = useRef<string | null>(null)
   const tfLoggedRef = useRef(false)
   const calibLoggedRef = useRef(false)
   const wheelTargetsRef = useRef<WheelSpinTargets | null>(null)
 
   useFrame((_, delta) => {
-    if (status !== 'connected' || !runtimePoseStore.active || !runtimePoseStore.robotNodeId) {
+    if (!dataSourceActive || !runtimePoseStore.active || !runtimePoseStore.robotNodeId) {
       return
     }
 

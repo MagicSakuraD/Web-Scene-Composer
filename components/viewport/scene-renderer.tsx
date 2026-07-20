@@ -12,7 +12,7 @@ import {
   selectedObjectReadyAtom,
   transformModeAtom,
 } from '@/lib/scene/atoms'
-import { simulateStatusAtom } from '@/lib/ros/atoms'
+import { appModeAtom } from '@/lib/playback/atoms'
 import { tagGltfSceneNodeIds } from '@/lib/scene/gltf-hierarchy'
 import { enhanceGltfScene } from '@/lib/scene/enhance-gltf-scene'
 import type { SceneTreeNode } from '@/lib/scene/types'
@@ -52,7 +52,7 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
   const nodes = useAtomValue(sceneNodesAtom)
   const selectedId = useAtomValue(selectedNodeIdAtom)
   const bumpObjectReady = useSetAtom(selectedObjectReadyAtom)
-  const simulateStatus = useAtomValue(simulateStatusAtom)
+  const dataSourceActive = useAtomValue(dataSourceActiveAtom)
   const clone = useMemo(() => {
     const c = scene.clone(true)
     // 先打 sceneNodeId，再增强（含 auto-instance）：proxy 会继承 tag
@@ -86,7 +86,7 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
   // 撤销 / 重做 / 检视器编辑需要据此把内部 prim 变换写回（拖拽中或已相等则跳过）。
   // Simulate 连接期间跳过，避免与运行时轮子旋转 / 位姿动画打架；断开时再统一对齐。
   useEffect(() => {
-    if (simulateStatus === 'connected') return
+    if (dataSourceActive) return
     clone.traverse((obj) => {
       const sid = obj.userData.sceneNodeId
       if (typeof sid !== 'string') return
@@ -100,7 +100,7 @@ function GltfAsset({ url, assetRootId }: { url: string; assetRootId: string }) {
       obj.rotation.set(prx, pry, prz)
       obj.scale.set(scale[0], scale[1], scale[2])
     })
-  }, [clone, nodes, simulateStatus])
+  }, [clone, nodes, dataSourceActive])
 
   useEffect(() => {
     let shouldRefreshSelection = selectedId === assetRootId
@@ -297,6 +297,7 @@ function SelectionObjectReady() {
 }
 
 function SelectedGizmo() {
+  const appMode = useAtomValue(appModeAtom)
   const selectedId = useAtomValue(selectedNodeIdAtom)
   const selectedNode = useAtomValue(selectedNodeAtom)
   const mode = useAtomValue(transformModeAtom)
@@ -306,6 +307,7 @@ function SelectedGizmo() {
     ? (objectByNodeId.get(selectedId) ?? nodeRefs.get(selectedId))
     : undefined
 
+  if (appMode === 'playback') return null
   if (!selectedId || !selectedNode || !object) return null
   if (mode === 'select') return null
   if (selectedNode.type === 'group' || selectedNode.type === 'ground') {
