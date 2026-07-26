@@ -1,12 +1,27 @@
 import type { McapIndexedReader } from '@mcap/core'
-import type { DecodedCameraFrame, DecodedPointCloud, OdomMessage } from '@/lib/foxglove/ros-serialization'
+import {
+  decodeOdometry,
+  decodeTfMessage,
+  type DecodedCameraFrame,
+  type DecodedPointCloud,
+  type DecodedTfTransform,
+  type OdomMessage,
+} from '@/lib/foxglove/ros-serialization'
 import { dispatchMcapMessage } from '@/lib/ros/message-dispatcher'
 import { resetImageDecoderForSeek } from '@/lib/ros/image-decoder'
 import { protobufRegistry } from '@/lib/mcap/protobuf-registry'
+import {
+  decodeFoxgloveFrameTransform,
+  decodeFoxglovePoseInFrame,
+} from '@/lib/mcap/foxglove-protobuf-decode'
+import type { DecodedSceneUpdate } from '@/lib/mcap/foxglove-scene-update-decode'
+import { isSceneUpdateSchema } from '@/lib/mcap/foxglove-scene-update-decode'
 import type { McapTopicInfo } from '@/lib/playback/atoms'
+import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
 
 type ImageFrameFn = (topic: string, frame: DecodedCameraFrame) => void
 type PointCloudFn = (topic: string, cloud: DecodedPointCloud) => void
+type SceneUpdateFn = (topic: string, update: DecodedSceneUpdate) => void
 type OdomFn = (pose: OdomMessage) => void
 
 interface ChannelMeta {
@@ -14,6 +29,18 @@ interface ChannelMeta {
   schemaName: string
   messageEncoding: string
   schemaId: number
+}
+
+function normalizeFrameId(frame: string): string {
+  return frame.startsWith('/') ? frame.slice(1) : frame
+}
+
+function isTfLikeSchema(schemaName: string): boolean {
+  return (
+    schemaName.includes('TFMessage') ||
+    schemaName === 'foxglove.FrameTransform' ||
+    schemaName === 'foxglove.PoseInFrame'
+  )
 }
 
 class McapReplayController {
@@ -24,9 +51,12 @@ class McapReplayController {
   private lastFlushTimeNs = BigInt(0)
   private imageSubs = new Map<string, Set<ImageFrameFn>>()
   private pointCloudSubs = new Map<string, Set<PointCloudFn>>()
+  private sceneUpdateSubs = new Map<string, Set<SceneUpdateFn>>()
   private onOdom: OdomFn | null = null
   private flushing = false
   private flushQueued: bigint | null = null
+  private flushQueuedSeek = false
+  private reflushTimer: ReturnType<typeof setTimeout> | null = null
 
   get isLoaded(): boolean {
     return this.reader != null
@@ -60,9 +90,15 @@ class McapReplayController {
   }
 
   close() {
+    if (this.reflushTimer != null) {
+      clearTimeout(this.reflushTimer)
+      this.reflushTimer = null
+    }
     this.reader = null
     this.channels.clear()
     this.lastFlushTimeNs = BigInt(0)
+    this.flushQueued = null
+    this.flushQueuedSeek = false
     protobufRegistry.reset()
     for (const topic of this.imageSubs.keys()) {
       resetImageDecoderForSeek(topic)
@@ -107,15 +143,44 @@ class McapReplayController {
     }
   }
 
+  subscribeSceneUpdate(topic: string, callback: SceneUpdateFn): () => void {
+    let set = this.sceneUpdateSubs.get(topic)
+    const isNewTopic = !set
+    if (!set) {
+      set = new Set()
+      this.sceneUpdateSubs.set(topic, set)
+    }
+    set.add(callback)
+    if (isNewTopic) this.reflushAfterSubscribe()
+    return () => {
+      const current = this.sceneUpdateSubs.get(topic)
+      if (!current) return
+      current.delete(callback)
+      if (current.size === 0) this.sceneUpdateSubs.delete(topic)
+    }
+  }
+
+  /** Debounce full seek reflush — rapid eye toggles / remounts must not stack seeks */
   private reflushAfterSubscribe() {
     if (!this.reader || this.lastFlushTimeNs === BigInt(0)) return
-    void this.flushToTime(this.lastFlushTimeNs, true)
+    if (this.reflushTimer != null) clearTimeout(this.reflushTimer)
+    this.reflushTimer = setTimeout(() => {
+      this.reflushTimer = null
+      if (!this.reader || this.lastFlushTimeNs === BigInt(0)) return
+      void this.flushToTime(this.lastFlushTimeNs, true)
+    }, 80)
   }
 
   private isTopicSubscribed(topic: string, schemaName: string, messageEncoding: string): boolean {
-    if (schemaName.includes('TFMessage') || schemaName === 'foxglove.FrameTransform') return true
+    if (isTfLikeSchema(schemaName)) return true
     if (schemaName.includes('Odometry') && this.onOdom) return true
-    if (this.imageSubs.has(topic) || this.pointCloudSubs.has(topic)) return true
+    if (
+      this.imageSubs.has(topic) ||
+      this.pointCloudSubs.has(topic) ||
+      this.sceneUpdateSubs.has(topic)
+    ) {
+      return true
+    }
     if (messageEncoding === 'protobuf' && schemaName.includes('PointCloud')) {
       return this.pointCloudSubs.size > 0
     }
@@ -126,7 +191,8 @@ class McapReplayController {
     if (messageEncoding === 'protobuf') {
       return (
         schemaName.includes('PointCloud') ||
-        schemaName.includes('CompressedImage')
+        schemaName.includes('CompressedImage') ||
+        isSceneUpdateSchema(schemaName)
       )
     }
     return (
@@ -134,6 +200,27 @@ class McapReplayController {
       schemaName.includes('CompressedImage') ||
       schemaName.includes('/Image')
     )
+  }
+
+  private decodeTfLike(
+    topic: string,
+    schemaName: string,
+    messageEncoding: string,
+    schemaId: number,
+    data: Uint8Array,
+  ): DecodedTfTransform[] | null {
+    if (messageEncoding === 'protobuf' || schemaName.startsWith('foxglove.')) {
+      if (schemaName === 'foxglove.FrameTransform') {
+        return decodeFoxgloveFrameTransform(schemaId, data)
+      }
+      if (schemaName === 'foxglove.PoseInFrame') {
+        return decodeFoxglovePoseInFrame(schemaId, data, topic)
+      }
+    }
+    if (schemaName.includes('TFMessage')) {
+      return decodeTfMessage(data)
+    }
+    return null
   }
 
   async seek(timeNs: bigint) {
@@ -144,92 +231,148 @@ class McapReplayController {
     await this.flushToTime(timeNs, true)
   }
 
+  /**
+   * Coalesce concurrent flushes to the latest target time.
+   * Previous implementation recursively called flushToTime while `flushing`
+   * was still true, which re-queued forever and froze the UI on rapid play/pause.
+   */
   async flushToTime(timeNs: bigint, isSeek = false) {
     if (!this.reader) return
 
     if (this.flushing) {
       this.flushQueued = timeNs
+      this.flushQueuedSeek = isSeek || timeNs < this.lastFlushTimeNs
       return
     }
 
     this.flushing = true
     try {
-      const clamped =
-        timeNs < this.startTimeNs
-          ? this.startTimeNs
-          : timeNs > this.endTimeNs
-            ? this.endTimeNs
-            : timeNs
-
-      const fromNs = isSeek || clamped < this.lastFlushTimeNs ? this.startTimeNs : this.lastFlushTimeNs
-
-      const latestSensor = new Map<
-        string,
-        { schemaName: string; messageEncoding: string; schemaId: number; data: Uint8Array }
-      >()
-      const handlers = {
-        onOdom: this.onOdom ?? undefined,
-        onImage: (topic: string, frame: DecodedCameraFrame) => {
-          for (const cb of this.imageSubs.get(topic) ?? []) cb(topic, frame)
-        },
-        onPointCloud: (topic: string, cloud: DecodedPointCloud) => {
-          for (const cb of this.pointCloudSubs.get(topic) ?? []) cb(topic, cloud)
-        },
-      }
-
-      for await (const msg of this.reader.readMessages({
-        startTime: fromNs,
-        endTime: clamped,
-      })) {
-        const meta = this.channels.get(msg.channelId)
-        if (!meta) continue
-        if (!this.isTopicSubscribed(meta.topic, meta.schemaName, meta.messageEncoding)) continue
-
-        const data = msg.data
-
-        if (this.isSensorMessage(meta.schemaName, meta.messageEncoding)) {
-          latestSensor.set(meta.topic, {
-            schemaName: meta.schemaName,
-            messageEncoding: meta.messageEncoding,
-            schemaId: meta.schemaId,
-            data,
-          })
-          continue
-        }
-
-        await dispatchMcapMessage({
-          topic: meta.topic,
-          schemaName: meta.schemaName,
-          messageEncoding: meta.messageEncoding,
-          schemaId: meta.schemaId,
-          data,
-          handlers,
-        })
-      }
-
-      for (const [topic, payload] of latestSensor) {
-        await dispatchMcapMessage({
-          topic,
-          schemaName: payload.schemaName,
-          messageEncoding: payload.messageEncoding,
-          schemaId: payload.schemaId,
-          data: payload.data,
-          handlers,
-        })
-      }
-
-      this.lastFlushTimeNs = clamped
-
-      while (this.flushQueued != null) {
-        const next = this.flushQueued
+      let target = timeNs
+      let seek = isSeek
+      for (;;) {
+        await this.flushOnce(target, seek)
+        if (this.flushQueued == null) break
+        target = this.flushQueued
+        seek = this.flushQueuedSeek || target < this.lastFlushTimeNs
         this.flushQueued = null
-        if (next !== clamped) {
-          await this.flushToTime(next, next < this.lastFlushTimeNs)
-        }
+        this.flushQueuedSeek = false
       }
     } finally {
       this.flushing = false
     }
+  }
+
+  private async flushOnce(timeNs: bigint, isSeek: boolean) {
+    if (!this.reader) return
+
+    const clamped =
+      timeNs < this.startTimeNs
+        ? this.startTimeNs
+        : timeNs > this.endTimeNs
+          ? this.endTimeNs
+          : timeNs
+
+    const fromNs = isSeek || clamped < this.lastFlushTimeNs ? this.startTimeNs : this.lastFlushTimeNs
+
+    const latestSensor = new Map<
+      string,
+      { schemaName: string; messageEncoding: string; schemaId: number; data: Uint8Array }
+    >()
+    /** Latest TF edge per child — avoid applying every historical /tf on seek */
+    const latestTfByChild = new Map<string, DecodedTfTransform>()
+    let latestOdom: OdomMessage | null = null
+
+    const handlers = {
+      onOdom: this.onOdom ?? undefined,
+      onImage: (topic: string, frame: DecodedCameraFrame) => {
+        for (const cb of this.imageSubs.get(topic) ?? []) cb(topic, frame)
+      },
+      onPointCloud: (topic: string, cloud: DecodedPointCloud) => {
+        for (const cb of this.pointCloudSubs.get(topic) ?? []) cb(topic, cloud)
+      },
+      onSceneUpdate: (topic: string, update: DecodedSceneUpdate) => {
+        for (const cb of this.sceneUpdateSubs.get(topic) ?? []) cb(topic, update)
+      },
+    }
+
+    for await (const msg of this.reader.readMessages({
+      startTime: fromNs,
+      endTime: clamped,
+    })) {
+      const meta = this.channels.get(msg.channelId)
+      if (!meta) continue
+      if (!this.isTopicSubscribed(meta.topic, meta.schemaName, meta.messageEncoding)) continue
+
+      const data = msg.data
+
+      if (isTfLikeSchema(meta.schemaName)) {
+        const transforms = this.decodeTfLike(
+          meta.topic,
+          meta.schemaName,
+          meta.messageEncoding,
+          meta.schemaId,
+          data,
+        )
+        if (transforms) {
+          for (const t of transforms) {
+            const child = normalizeFrameId(t.childFrame)
+            if (child) latestTfByChild.set(child, t)
+          }
+        }
+        continue
+      }
+
+      if (meta.schemaName.includes('Odometry') && this.onOdom) {
+        const pose = decodeOdometry(data)
+        if (pose) latestOdom = pose
+        continue
+      }
+
+      if (this.isSensorMessage(meta.schemaName, meta.messageEncoding)) {
+        latestSensor.set(meta.topic, {
+          schemaName: meta.schemaName,
+          messageEncoding: meta.messageEncoding,
+          schemaId: meta.schemaId,
+          data,
+        })
+        continue
+      }
+
+      await dispatchMcapMessage({
+        topic: meta.topic,
+        schemaName: meta.schemaName,
+        messageEncoding: meta.messageEncoding,
+        schemaId: meta.schemaId,
+        data,
+        handlers,
+      })
+    }
+
+    if (isSeek) {
+      tfRuntimeStore.clearEdges()
+    }
+
+    if (latestTfByChild.size > 0) {
+      tfRuntimeStore.setActive(true)
+      tfRuntimeStore.updateTransforms([...latestTfByChild.values()])
+    }
+
+    if (latestOdom && this.onOdom) {
+      this.onOdom(latestOdom)
+    }
+
+    for (const [topic, payload] of latestSensor) {
+      await dispatchMcapMessage({
+        topic,
+        schemaName: payload.schemaName,
+        messageEncoding: payload.messageEncoding,
+        schemaId: payload.schemaId,
+        data: payload.data,
+        handlers,
+      })
+    }
+
+    this.lastFlushTimeNs = clamped
   }
 }
 

@@ -8,25 +8,21 @@ import {
   usePanelRef,
   type PanelImperativeHandle,
 } from 'react-resizable-panels'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom } from 'jotai'
 import { TitleBar } from '@/components/title-bar'
-import { SceneHierarchy } from '@/components/scene-hierarchy'
 import { Viewport } from '@/components/viewport'
-import { Inspector } from '@/components/inspector'
 import { ProjectBrowser } from '@/components/project-browser'
-import { TopicTree } from '@/components/playback/topic-tree'
-import { FrameInspector } from '@/components/playback/frame-inspector'
 import { PlaybackRuntime } from '@/components/playback/playback-runtime'
 import { uiPanelsAtom } from '@/lib/scene/atoms'
-import { appModeAtom } from '@/lib/playback/atoms'
 import { PanelCollapseRail } from '@/components/panel-collapse-rail'
 import { CreateContextMenu } from '@/components/create-context-menu'
 import { I18nSync } from '@/components/i18n-sync'
 import { SceneHistoryShortcuts } from '@/components/scene-history-shortcuts'
+import { SidePanelHost } from '@/components/workspace/side-panel-host'
+import { SidePanelModeSync } from '@/components/workspace/side-panel-mode-sync'
 
 export default function WebSceneComposer() {
   const [uiPanels, setUiPanels] = useAtom(uiPanelsAtom)
-  const appMode = useAtomValue(appModeAtom)
   const leftPanelRef = usePanelRef()
   const rightPanelRef = usePanelRef()
   const bottomPanelRef = usePanelRef()
@@ -62,6 +58,7 @@ export default function WebSceneComposer() {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
       <I18nSync />
+      <SidePanelModeSync />
       <SceneHistoryShortcuts />
       <CreateContextMenu />
       <PlaybackRuntime />
@@ -84,14 +81,17 @@ export default function WebSceneComposer() {
                 collapsible
                 collapsedSize="0px"
               >
-                <div className="h-full relative flex bg-sidebar/80 border-r border-border">
-                  {appMode === 'compose' ? <SceneHierarchy /> : <TopicTree />}
-                  <PanelCollapseRail
-                    side="left"
-                    isOpen={uiPanels.leftOpen}
-                    onToggle={handleLeftToggle}
-                  />
-                </div>
+                <SidePanelHost
+                  slot="left"
+                  className="border-r border-border"
+                  rail={
+                    <PanelCollapseRail
+                      side="left"
+                      isOpen={uiPanels.leftOpen}
+                      onToggle={handleLeftToggle}
+                    />
+                  }
+                />
               </Panel>
 
               <PanelResizeHandle className="w-1 bg-border hover:bg-primary transition-colors cursor-col-resize" />
@@ -110,14 +110,17 @@ export default function WebSceneComposer() {
                 collapsible
                 collapsedSize="0px"
               >
-                <div className="h-full relative flex bg-sidebar/80 border-l border-border">
-                  <PanelCollapseRail
-                    side="right"
-                    isOpen={uiPanels.rightOpen}
-                    onToggle={handleRightToggle}
-                  />
-                  {appMode === 'compose' ? <Inspector /> : <FrameInspector />}
-                </div>
+                <SidePanelHost
+                  slot="right"
+                  className="border-l border-border"
+                  rail={
+                    <PanelCollapseRail
+                      side="right"
+                      isOpen={uiPanels.rightOpen}
+                      onToggle={handleRightToggle}
+                    />
+                  }
+                />
               </Panel>
             </PanelGroup>
           </Panel>

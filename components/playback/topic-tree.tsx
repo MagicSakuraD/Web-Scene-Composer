@@ -4,12 +4,13 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, Eye, EyeOff, Radio } from 'lucide-react'
 import { useAtom, useAtomValue } from 'jotai'
 import {
+  dataSourceModeAtom,
   mcapTopicsAtom,
   selectedTopicAtom,
   topicVisibilityAtom,
   type McapTopicInfo,
 } from '@/lib/playback/atoms'
-import { lidarDisplayAtom, type LidarColorMode } from '@/lib/ros/atoms'
+import { simulateStatusAtom, lidarDisplayAtom, type LidarColorMode } from '@/lib/ros/atoms'
 import { isLidarPointCloudTopic } from '@/lib/foxglove/ros-serialization'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/hooks/use-i18n'
@@ -160,18 +161,30 @@ function TopicRow({ item }: { item: McapTopicInfo }) {
   )
 }
 
+function emptyMessageKey(
+  dataSourceMode: string,
+  simulateStatus: string,
+): 'playback.topicTree.emptyConnecting' | 'playback.topicTree.emptyLive' | 'playback.topicTree.empty' | 'playback.topicTree.emptyIdle' {
+  if (dataSourceMode === 'live' || simulateStatus === 'connecting') {
+    if (simulateStatus === 'connecting') return 'playback.topicTree.emptyConnecting'
+    return 'playback.topicTree.emptyLive'
+  }
+  if (dataSourceMode === 'replay') return 'playback.topicTree.empty'
+  return 'playback.topicTree.emptyIdle'
+}
+
+/** Shared Topics panel — Foxglove Bridge (live) + MCAP (replay) */
 export function TopicTree() {
   const topics = useAtomValue(mcapTopicsAtom)
+  const dataSourceMode = useAtomValue(dataSourceModeAtom)
+  const simulateStatus = useAtomValue(simulateStatusAtom)
   const { t } = useI18n()
 
   if (topics.length === 0) {
     return (
       <div className="h-full flex flex-col flex-1 min-w-0 bg-muted/20 text-sidebar-foreground">
-        <div className="px-3 py-2 border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {t('playback.topicTree.title')}
-        </div>
         <div className="flex-1 flex items-center justify-center p-4 text-sm text-muted-foreground text-center">
-          {t('playback.topicTree.empty')}
+          {t(emptyMessageKey(dataSourceMode, simulateStatus))}
         </div>
       </div>
     )
@@ -179,17 +192,19 @@ export function TopicTree() {
 
   return (
     <div className="h-full flex flex-col flex-1 min-w-0 bg-muted/20 text-sidebar-foreground overflow-hidden">
-      <div className="px-3 py-2 border-b border-border flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {t('playback.topicTree.title')}
-        </span>
+      <div className="px-3 py-1.5 border-b border-border flex items-center justify-between gap-2 shrink-0">
         <span className="text-[10px] text-muted-foreground truncate">
-          {t('playback.topicTree.hint')}
+          {dataSourceMode === 'live'
+            ? t('playback.topicTree.hintLive')
+            : t('playback.topicTree.hint')}
+        </span>
+        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+          {topics.length}
         </span>
       </div>
       <div className="flex-1 overflow-y-auto py-1">
         {topics.map((item) => (
-          <TopicRow key={item.topic} item={item} />
+          <TopicRow key={`${item.channelId}-${item.topic}`} item={item} />
         ))}
       </div>
     </div>

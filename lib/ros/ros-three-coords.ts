@@ -5,8 +5,9 @@ import * as THREE from 'three'
  * → Three.js glTF（X 右, Y 上, Z 前）
  *
  * 等价于绕 X 轴旋转 -90°：把 ROS 的 Z 轴映射到 Three 的 Y 轴。
+ * 亦可作 Group.quaternion，包住原始 ROS 位姿/尺寸（与 Foxglove CubePrimitive 一致）。
  */
-const ROS_TO_THREE_Q = new THREE.Quaternion().setFromAxisAngle(
+export const ROS_TO_THREE_Q = new THREE.Quaternion().setFromAxisAngle(
   new THREE.Vector3(1, 0, 0),
   -Math.PI / 2,
 )

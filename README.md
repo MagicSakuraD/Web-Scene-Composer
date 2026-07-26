@@ -4,13 +4,13 @@
   <img src="public/wsc-icon.png" alt="Web Scene Composer" width="96" />
 </p>
 
-**Web Scene Composer V1.0** 是面向 **Isaac Sim / ROS 2（Nova Carter）** 的浏览器端 **场景组装器与仿真联调前端**。
+浏览器端的 **Isaac Sim / ROS 2** 联调与可视化工具，面向 Nova Carter 等工作流。
 
-在 Web 中组装 glTF 场景、连接 Foxglove Bridge，完成 **Nav2 导航发目标**、**Xbox 差速 `/cmd_vel` 遥控**，并实时查看相机、LiDAR、规划路径与**代价地图**。定位是联调与可视化。
+- **仿真联调**：连接 Foxglove Bridge，同步底盘位姿与 TF，支持 Nav2 发目标、Xbox `/cmd_vel`、相机 / LiDAR / 代价地图
+- **场景组装**：导入 glTF、编辑 prim 层级与变换，在 WebGPU 视口中预览
+- **MCAP 可视化**：加载本地 `.mcap`，按话题回放点云与多路相机
 
-> **联调为核 · 组装为本 · 材质为辅** — 轻量仿真侧数字孪生可视化（浏览器中的位姿 / 传感器 / 导航与 Isaac·Nav2 对齐），不是企业级数字孪生平台。
-
-在线预览（Vercel）：合并到 `main` 后自动部署。
+在线预览随 `main` 分支自动部署至 Vercel。
 
 ---
 
@@ -48,11 +48,13 @@ WebGPU TSL Shader Graph，便于视口内快速试材质；完整 shading 仍建
 
 📺 [开发日志：材质预览演示](https://www.bilibili.com/video/BV1PBN66ME8g/)
 
-### MCAP 离线回放
+### MCAP 离线可视化
 
-标题栏切换到 **数据回放** → **打开 MCAP**，加载本地 `.mcap`（如 nuScenes）。左侧 Topics 默认隐藏，点眼睛启用话题；点云在 3D 视口叠加，摄像头在底部多画面网格；时间轴支持播放 / 暂停 / 重播与变速。支持 `foxglove.PointCloud` / `CompressedImage`（protobuf）及 lz4 压缩。
+标题栏切换到 **数据回放** → **打开 MCAP**，加载本地 `.mcap`（如 nuScenes）做传感器可视化：左侧 Topics 默认隐藏，点眼睛启用话题；点云在 3D 视口叠加，摄像头在底部多画面网格；时间轴支持播放 / 暂停 / 重播与变速。支持 `foxglove.PointCloud` / `CompressedImage`（protobuf）及 lz4 压缩。
 
-![MCAP 离线回放](public/docs_images/mcap.png)
+[![MCAP 离线可视化](public/docs_images/mcap.png)](https://www.bilibili.com/video/BV13D3j6YE1i/)
+
+📺 [开发日志：MCAP 离线回放](https://www.bilibili.com/video/BV13D3j6YE1i/)
 
 ---
 
@@ -65,7 +67,7 @@ WebGPU TSL Shader Graph，便于视口内快速试材质；完整 shading 仍建
 | **核心** | 代价地图可视化 | `/local_costmap`、`/global_costmap`（OccupancyGrid）→ 视口伪彩热力叠加，面板 Toggle 开关 |
 | **核心** | 差速驱动 | Xbox 手柄 → `/cmd_vel` |
 | **核心** | 传感器面板 | 摄像头（CompressedImage / H.264）、LiDAR（PointCloud2，视口叠加） |
-| **核心** | MCAP 离线回放 | 本地 `.mcap`：Topics 显隐、时间轴、点云 / 相机回放（Compose / Playback 双模式） |
+| **核心** | MCAP 离线可视化 | 本地 `.mcap` 传感器回放：Topics 显隐、时间轴、点云 / 多路相机（仿真联调 / 数据回放 双模式） |
 | **基础** | 场景组装 | glTF 导入、prim 树、Transform Gizmo、视口着色（Shaded / Solid / Wireframe / Normals）、大纲可见性开关、导出选中物体 `.glb` |
 | **辅助** | 材质节点 | TSL Shader Graph（探索用）；glTF 材质导出仍不完善（见下方） |
 | — | 检视器 / 项目浏览器 | Transform、灯光、Asset / Prim；资源列表 |
@@ -183,7 +185,7 @@ app/                    Next.js App Router
 components/
   viewport/             R3F 渲染、LiDAR、材质同步、路径可视化
   panels/               底部面板（相机、雷达、材质图、差速驱动、Nav Goal）
-  playback/             MCAP 回放：Topics 树、时间轴、帧检视
+  playback/             MCAP 可视化：Topics 树、时间轴、帧检视
   scene-hierarchy.tsx   场景大纲（含选中物体 .glb 导出）
   inspector.tsx         右侧检视器
 lib/
@@ -207,7 +209,7 @@ WebGPU 功能开关见 `lib/viewport/visual-config.ts` 中的 `VIEWPORT_WEBGPU_F
 - [@xyflow/react](https://reactflow.dev) — 材质节点图（辅助）
 - [Jotai](https://jotai.org) — 状态管理
 - [@foxglove/ws-protocol](https://github.com/foxglove/ws-protocol) — Foxglove Bridge 客户端
-- [@mcap/core](https://github.com/foxglove/mcap) · [@mcap/browser](https://github.com/foxglove/mcap) — MCAP 离线回放
+- [@mcap/core](https://github.com/foxglove/mcap) · [@mcap/browser](https://github.com/foxglove/mcap) — MCAP 离线可视化
 
 ---
 
@@ -239,3 +241,7 @@ WebGPU 功能开关见 `lib/viewport/visual-config.ts` 中的 `VIEWPORT_WEBGPU_F
 | 材质节点 →「导出 glTF」 | 预览平面 + 烘焙 PBR | 仅为材质快照，**不含**选中物体几何 |
 
 后续若要「选中 mesh + 图内材质」一体导出，需要把几何导出与材质烘焙打通。
+
+### 3. 3D 包围框标注微调未就绪
+
+MCAP 传感器可视化（点云 / 相机 / 时间轴）已可用；**3D 包围框标注的交互微调仍有问题**，暂未作为正式能力写入功能概览与演示。

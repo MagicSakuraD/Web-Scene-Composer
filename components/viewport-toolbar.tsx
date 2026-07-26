@@ -1,9 +1,28 @@
 'use client'
 
-import { MousePointer2, Move, RotateCw, Maximize2, Globe, Box } from 'lucide-react'
-import { useAtom } from 'jotai'
+import {
+  MousePointer2,
+  Move,
+  RotateCw,
+  Maximize2,
+  Globe,
+  Box,
+  Plus,
+  Upload,
+  Eye,
+  EyeOff,
+} from 'lucide-react'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { transformModeAtom, spaceModeAtom } from '@/lib/scene/atoms'
 import { viewportShadingAtom, type ViewportShading } from '@/lib/viewport/atoms'
+import { appModeAtom } from '@/lib/playback/atoms'
+import {
+  addAnnotationTrackAtom,
+  promoteSceneCubesAtom,
+  showReadonlySceneAnnotationsAtom,
+} from '@/lib/annotations/atoms'
+import { sceneEntityStore } from '@/lib/ros/scene-entity-store'
+import { getPlaybackCloudFrameId } from '@/lib/ros/playback-display-frame'
 import type { TransformMode } from '@/lib/scene/types'
 import type { MessageKey } from '@/lib/i18n/messages'
 import { useI18n } from '@/hooks/use-i18n'
@@ -35,11 +54,17 @@ export function ViewportToolbar() {
   const [mode, setMode] = useAtom(transformModeAtom)
   const [space, setSpace] = useAtom(spaceModeAtom)
   const [shading, setShading] = useAtom(viewportShadingAtom)
+  const appMode = useAtomValue(appModeAtom)
+  const [showReadonly, setShowReadonly] = useAtom(showReadonlySceneAnnotationsAtom)
+  const addTrack = useSetAtom(addAnnotationTrackAtom)
+  const promote = useSetAtom(promoteSceneCubesAtom)
 
   const shadingItems = shadingOptions.map(({ value, labelKey }) => ({
     value,
     label: t(labelKey),
   }))
+
+  const playback = appMode === 'playback'
 
   return (
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-lg bg-card/90 backdrop-blur-sm border border-border p-1 shadow-md z-10">
@@ -95,6 +120,62 @@ export function ViewportToolbar() {
           Local
         </button>
       </div>
+
+      {playback ? (
+        <>
+          <div className="w-px h-5 bg-border mx-0.5" />
+          <div className="flex items-center gap-0.5 rounded-md bg-accent/40 p-0.5">
+            <button
+              type="button"
+              className="p-1.5 rounded text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              title={t('viewport.annotation.addBox')}
+              aria-label={t('viewport.annotation.addBox')}
+              onClick={() => {
+                addTrack({
+                  label: 'object',
+                  frameId: getPlaybackCloudFrameId(),
+                  source: 'manual',
+                  keyframe: {
+                    position: [8, 0, 0],
+                    size: [4, 1.8, 1.5],
+                  },
+                })
+                setMode('translate')
+              }}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className="p-1.5 rounded text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              title={t('viewport.annotation.promote')}
+              aria-label={t('viewport.annotation.promote')}
+              onClick={() => {
+                const cubes = sceneEntityStore.getSnapshot().cubes
+                if (cubes.length === 0) return
+                promote({ cubes, replaceSameId: true })
+                setShowReadonly(false)
+              }}
+            >
+              <Upload className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'p-1.5 rounded transition-colors',
+                showReadonly
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+              )}
+              title={t('viewport.annotation.toggleReadonly')}
+              aria-label={t('viewport.annotation.toggleReadonly')}
+              onClick={() => setShowReadonly((v) => !v)}
+            >
+              {showReadonly ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+            </button>
+          </div>
+        </>
+      ) : null}
 
       <div className="w-px h-5 bg-border mx-0.5" />
 

@@ -5,18 +5,22 @@ import { useThree } from '@react-three/fiber'
 import { useSetAtom } from 'jotai'
 import * as THREE from 'three'
 import { selectedNodeIdAtom, selectedObjectReadyAtom } from '@/lib/scene/atoms'
+import { selectedTrackIdAtom } from '@/lib/annotations/atoms'
 import { resolvePickedNodeId } from '@/lib/scene/object-registry'
+import { resolveAnnotationTrackId } from '@/lib/annotations/object-registry'
 import { shouldSkipViewportPick } from '@/lib/viewport/transform-gizmo-state'
 
 const _pointer = new THREE.Vector2()
 const _raycaster = new THREE.Raycaster()
 
 /**
- * 左键拾取；pointerup 执行以免与 TransformControls 拖拽冲突。
+ * 左键拾取；annotation 与场景节点互斥。
+ * pointerup 执行以免与 TransformControls 拖拽冲突。
  */
 export function ViewportPicker() {
   const { camera, scene, gl } = useThree()
-  const setSelected = useSetAtom(selectedNodeIdAtom)
+  const setSelectedNode = useSetAtom(selectedNodeIdAtom)
+  const setSelectedTrack = useSetAtom(selectedTrackIdAtom)
   const bumpObjectReady = useSetAtom(selectedObjectReadyAtom)
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null)
 
@@ -32,15 +36,27 @@ export function ViewportPicker() {
       const hits = _raycaster.intersectObjects(scene.children, true)
 
       for (const hit of hits) {
+        if (hit.object.userData.ignorePick) continue
+        if (hit.object instanceof THREE.Points) continue
+
+        const trackId = resolveAnnotationTrackId(hit.object)
+        if (trackId) {
+          setSelectedTrack(trackId)
+          setSelectedNode(null)
+          return
+        }
+
         const nodeId = resolvePickedNodeId(hit.object, hit.instanceId)
         if (nodeId) {
-          setSelected(nodeId)
+          setSelectedNode(nodeId)
+          setSelectedTrack(null)
           bumpObjectReady((n) => n + 1)
           return
         }
       }
 
-      setSelected(null)
+      setSelectedNode(null)
+      setSelectedTrack(null)
     }
 
     const onPointerDown = (e: PointerEvent) => {
@@ -68,7 +84,7 @@ export function ViewportPicker() {
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointerup', onPointerUp)
     }
-  }, [camera, scene, gl, setSelected, bumpObjectReady])
+  }, [camera, scene, gl, setSelectedNode, setSelectedTrack, bumpObjectReady])
 
   return null
 }

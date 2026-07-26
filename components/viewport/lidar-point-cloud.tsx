@@ -21,12 +21,15 @@ import { applyLidarCloudMount } from '@/lib/ros/apply-lidar-mount'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
 import { objectByNodeId } from '@/lib/scene/object-registry'
 import { resolveRobotAnimRoot } from '@/lib/ros/caster-swivel'
+import { getPlaybackGroundLiftY } from '@/lib/ros/playback-display-frame'
+import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
 
 /**
  * Nova Carter 3D 雷达点云（WebGPU / TSL）
  * - 挂载：优先 glTF `XT_32`（ROS frame front_3d_lidar）→ /tf → 话题回退
  * - 点坐标：雷达系 local，经 rosPointsToThreeBuffer 转 Three.js
  * - 轴向：默认绕局部 X +90°（见 lidar-config.ts）；面板请用「默认」恢复，勿长期手调 X/Y
+ * - 回放：不跟车；与标注共用 LIDAR_TOP，并用 TF 外参高度抬到 grid
  */
 export function LidarPointCloud() {
   const config = useAtomValue(lidarDisplayAtom)
@@ -37,6 +40,7 @@ export function LidarPointCloud() {
   const orientGroupRef = useRef<THREE.Group>(null)
   const mountModeRef = useRef<'frame' | 'tf' | 'gltf' | null>(null)
   const lastGenerationRef = useRef(0)
+  const lastTfGenRef = useRef(-1)
   const solidColorScratch = useMemo(() => new THREE.Color(), [])
 
   const { material, uniforms } = useMemo(() => createLidarTslMaterial(), [])
@@ -60,7 +64,18 @@ export function LidarPointCloud() {
     }
 
     const mountGroup = mountGroupRef.current
-    if (!mountGroup || !config.followRobot) return
+    if (!mountGroup) return
+
+    // Playback: keep cloud in sensor frame; lift by lidar→base height so ground ≈ grid
+    if (!config.followRobot) {
+      if (tfRuntimeStore.generation !== lastTfGenRef.current) {
+        lastTfGenRef.current = tfRuntimeStore.generation
+        mountGroup.position.set(0, getPlaybackGroundLiftY(), 0)
+        mountGroup.quaternion.identity()
+        mountModeRef.current = null
+      }
+      return
+    }
 
     const targetId = runtimePoseStore.robotNodeId
     if (!targetId) return

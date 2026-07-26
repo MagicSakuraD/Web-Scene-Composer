@@ -8,7 +8,7 @@ import { foxgloveManager } from '@/lib/foxglove/client-manager'
 import { mcapReplayController } from '@/lib/mcap/mcap-replay-controller'
 import { lidarPointStore } from '@/lib/ros/lidar-point-store'
 
-/** 雷达 Tab 打开且 visible 时订阅 PointCloud2（Live 或 MCAP） */
+/** lidarDisplayAtom.visible 时订阅 PointCloud2（Live Bridge 或 MCAP） */
 export function useLidarViewer(active: boolean) {
   const dataSourceActive = useAtomValue(dataSourceActiveAtom)
   const dataSourceMode = useAtomValue(dataSourceModeAtom)

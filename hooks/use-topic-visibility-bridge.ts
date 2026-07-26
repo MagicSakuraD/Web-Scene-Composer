@@ -15,8 +15,8 @@ import {
 } from '@/lib/foxglove/ros-serialization'
 
 /**
- * 将 Topic 树显隐同步到摄像头网格与雷达点云订阅（回放模式）。
- * 点云：同时只激活一个可见话题（后开的覆盖先前的）。
+ * Topic 树显隐 → 摄像头网格与雷达点云（live Bridge 与 MCAP 回放共用）。
+ * 点云：同时只激活一个可见话题。
  */
 export function useTopicVisibilityBridge() {
   const dataSourceMode = useAtomValue(dataSourceModeAtom)
@@ -27,7 +27,9 @@ export function useTopicVisibilityBridge() {
   const lidarTopicRef = useRef('')
 
   useEffect(() => {
-    if (dataSourceMode !== 'replay') return
+    if (dataSourceMode !== 'replay' && dataSourceMode !== 'live') return
+
+    const isLive = dataSourceMode === 'live'
 
     const visibleCameras = preferCompressedCameraTopics(
       topics
@@ -52,7 +54,6 @@ export function useTopicVisibilityBridge() {
       return
     }
 
-    // 多选时只保留一个：优先当前已激活话题，否则取最后一个可见项
     let active =
       visiblePointClouds.find((t) => t.topic === lidarTopicRef.current) ??
       visiblePointClouds[visiblePointClouds.length - 1]
@@ -78,9 +79,9 @@ export function useTopicVisibilityBridge() {
       ...prev,
       topic: active.topic,
       visible: true,
-      followRobot: false,
-      extraRotationX: 0,
-      extraRotationY: 0,
+      followRobot: isLive,
+      extraRotationX: isLive ? prev.extraRotationX : 0,
+      extraRotationY: isLive ? prev.extraRotationY : 0,
     }))
   }, [
     dataSourceMode,

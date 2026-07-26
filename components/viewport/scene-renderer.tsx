@@ -12,7 +12,7 @@ import {
   selectedObjectReadyAtom,
   transformModeAtom,
 } from '@/lib/scene/atoms'
-import { appModeAtom } from '@/lib/playback/atoms'
+import { appModeAtom, dataSourceActiveAtom } from '@/lib/playback/atoms'
 import { tagGltfSceneNodeIds } from '@/lib/scene/gltf-hierarchy'
 import { enhanceGltfScene } from '@/lib/scene/enhance-gltf-scene'
 import type { SceneTreeNode } from '@/lib/scene/types'
@@ -27,6 +27,10 @@ import { transformGizmoState } from '@/lib/viewport/transform-gizmo-state'
 import { SelectionBoundingBox } from './selection-bounding-box'
 import { RuntimeRobotSync } from './runtime-robot-sync'
 import { LidarPointCloud } from './lidar-point-cloud'
+import { SceneAnnotationCubes } from './scene-annotation-cubes'
+import { EditableAnnotationBoxes } from '@/components/annotations/editable-annotation-boxes'
+import { AnnotationTransformGizmo } from '@/components/annotations/annotation-transform-gizmo'
+import { showReadonlySceneAnnotationsAtom } from '@/lib/annotations/atoms'
 import { NavPathLines } from './nav-path-lines'
 import { CostmapOverlay } from './costmap-overlay'
 import { MaterialGraphSync } from './material-graph-sync'
@@ -319,6 +323,7 @@ function SelectedGizmo() {
 
 export function SceneRenderer() {
   const tree = useAtomValue(renderStageAtom)
+  const showReadonly = useAtomValue(showReadonlySceneAnnotationsAtom)
 
   return (
     <>
@@ -326,6 +331,8 @@ export function SceneRenderer() {
       <ViewportSceneHelpers />
       <RuntimeRobotSync />
       {VIEWPORT_WEBGPU_FEATURES.lidarPointCloud ? <LidarPointCloud /> : null}
+      {showReadonly ? <SceneAnnotationCubes /> : null}
+      <EditableAnnotationBoxes />
       <NavPathLines />
       <CostmapOverlay />
       {VIEWPORT_WEBGPU_FEATURES.materialGraph ? <MaterialGraphSync /> : null}
@@ -335,6 +342,7 @@ export function SceneRenderer() {
       <SelectionObjectReady />
       <SelectionBoundingBox />
       <SelectedGizmo />
+      <AnnotationTransformGizmo />
     </>
   )
 }

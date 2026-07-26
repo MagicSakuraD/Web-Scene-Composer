@@ -161,6 +161,70 @@ export function decodeFoxgloveFrameTransform(
   ]
 }
 
+/**
+ * foxglove.PoseInFrame — pose expressed in `frame_id`.
+ * NuScenes `/pose` often has frame_id=base_link with the ego pose fields;
+ * dynamic map→base_link usually already comes from /tf FrameTransform.
+ * Only ingest when we get a usable translation (avoid null/zero overwriting TF).
+ */
+export function decodeFoxglovePoseInFrame(
+  schemaId: number,
+  data: Uint8Array,
+  topic = '',
+): DecodedTfTransform[] | null {
+  const msg = protobufRegistry.decode(schemaId, data)
+  if (!msg) return null
+
+  const obj = protobufRegistry.toObject(schemaId, msg)
+  const pose = protoField(obj, 'pose') as Record<string, unknown> | undefined
+  const position = (pose ? protoField(pose, 'position') : undefined) as
+    | { x?: number; y?: number; z?: number }
+    | undefined
+  const orientation = (pose ? protoField(pose, 'orientation') : undefined) as
+    | { x?: number; y?: number; z?: number; w?: number }
+    | undefined
+  if (!position || !orientation) return null
+  if (
+    position.x == null ||
+    position.y == null ||
+    position.z == null ||
+    !Number.isFinite(position.x) ||
+    !Number.isFinite(position.y) ||
+    !Number.isFinite(position.z)
+  ) {
+    return null
+  }
+
+  const frameId = String(protoField(obj, 'frameId', 'frame_id') ?? '')
+  // PoseInFrame: pose of child in frame_id. NuScenes /pose is ego in map when
+  // frame_id is "map"; if frame_id is already "base_link", TF owns that edge.
+  if (!frameId || frameId === 'base_link' || frameId === 'ego') return null
+
+  const transform = {
+    translation: {
+      x: position.x,
+      y: position.y,
+      z: position.z,
+    },
+    rotation: {
+      x: orientation.x ?? 0,
+      y: orientation.y ?? 0,
+      z: orientation.z ?? 0,
+      w: orientation.w ?? 1,
+    },
+  }
+  const children =
+    topic.toLowerCase().includes('pose') || !topic
+      ? (['base_link', 'ego'] as const)
+      : (['ego'] as const)
+
+  return children.map((childFrame) => ({
+    parentFrame: frameId,
+    childFrame,
+    transform,
+  }))
+}
+
 export function isFoxgloveProtobufSchema(schemaName: string): boolean {
   return schemaName.startsWith('foxglove.')
 }

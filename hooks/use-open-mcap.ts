@@ -26,6 +26,7 @@ import {
 } from '@/lib/ros/atoms'
 import { cameraFrameStore } from '@/lib/ros/camera-frame-store'
 import { lidarPointStore } from '@/lib/ros/lidar-point-store'
+import { sceneEntityStore } from '@/lib/ros/scene-entity-store'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
 import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
 import { odomSceneCalibration } from '@/lib/ros/odom-scene-calibration'
@@ -60,6 +61,7 @@ export function useOpenMcap() {
 
         cameraFrameStore.clearAll()
         lidarPointStore.clearAll()
+        sceneEntityStore.clearAll()
         runtimePoseStore.reset()
         tfRuntimeStore.reset()
         odomSceneCalibration.reset()
@@ -123,6 +125,7 @@ export function useOpenMcap() {
     protobufRegistry.reset()
     cameraFrameStore.clearAll()
     lidarPointStore.clearAll()
+    sceneEntityStore.clearAll()
     runtimePoseStore.reset()
     tfRuntimeStore.reset()
     odomSceneCalibration.reset()

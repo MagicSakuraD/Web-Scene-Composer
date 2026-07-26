@@ -184,12 +184,6 @@ export function SceneHierarchy() {
 
   return (
     <div className="h-full flex flex-col bg-sidebar flex-1 min-w-0">
-      <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-        <div className="inline-flex items-center px-3 py-1 bg-selection-accent/15 rounded text-xs font-medium text-selection-accent">
-          {t('sceneHierarchy.title')}
-        </div>
-      </div>
-
       <div
         className="flex-1 overflow-auto p-1"
         onContextMenu={(e) => openCreateContextMenu(e, 'hierarchy', setContextMenu)}

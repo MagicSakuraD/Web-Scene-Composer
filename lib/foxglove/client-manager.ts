@@ -1,5 +1,6 @@
 import { FoxgloveClient } from '@foxglove/ws-protocol'
 import type { Channel, ClientChannelId, Service, SubscriptionId } from '@foxglove/ws-protocol'
+import type { McapTopicInfo } from '@/lib/playback/atoms'
 import {
   encodeTwist,
   decodeOdometry,
@@ -124,6 +125,9 @@ class FoxgloveBridgeManager {
   private imageSubs = new Map<string, ImageSubscription>()
   private pointCloudSubs = new Map<string, PointCloudSubscription>()
   private topicListeners = new Set<TopicsListener>()
+  /** Fired on any channel advertise/unadvertise (full topic list for Topics panel) */
+  private channelListeners = new Set<TopicsListener>()
+  private cachedTopicInfos: McapTopicInfo[] = []
   private lidarTopicListeners = new Set<TopicsListener>()
   private lastTfDebugAt = 0
 
@@ -209,6 +213,7 @@ class FoxgloveBridgeManager {
           this.channels = Array.from(this.channelsById.values())
           this.notifyTopicListeners()
           this.notifyLidarTopicListeners()
+          this.notifyChannelListeners()
           this.syncOdomSubscription(client)
           this.syncTfSubscription(client)
           this.syncImageSubscriptions(client)
@@ -230,6 +235,7 @@ class FoxgloveBridgeManager {
           this.channels = Array.from(this.channelsById.values())
           this.notifyTopicListeners()
           this.notifyLidarTopicListeners()
+          this.notifyChannelListeners()
         })
 
         client.on('advertiseServices', (services: Service[]) => {
@@ -572,6 +578,50 @@ class FoxgloveBridgeManager {
     return () => this.topicListeners.delete(listener)
   }
 
+  /** Full channel list changes (Topics panel — live + shared with MCAP shape) */
+  onChannelsChanged(listener: TopicsListener) {
+    this.channelListeners.add(listener)
+    return () => this.channelListeners.delete(listener)
+  }
+
+  private rebuildTopicInfoCache(): boolean {
+    const next: McapTopicInfo[] = this.channels
+      .map((c) => ({
+        topic: c.topic,
+        schemaName: c.schemaName,
+        channelId: c.id,
+        messageEncoding: c.encoding,
+        schemaId: 0,
+      }))
+      .sort((a, b) => a.topic.localeCompare(b.topic))
+
+    const prev = this.cachedTopicInfos
+    if (
+      prev.length === next.length &&
+      prev.every(
+        (p, i) =>
+          p.topic === next[i].topic &&
+          p.schemaName === next[i].schemaName &&
+          p.channelId === next[i].channelId,
+      )
+    ) {
+      return false
+    }
+    this.cachedTopicInfos = next
+    return true
+  }
+
+  private notifyChannelListeners() {
+    this.rebuildTopicInfoCache()
+    for (const listener of this.channelListeners) {
+      listener()
+    }
+  }
+
+  getTopicInfos(): readonly McapTopicInfo[] {
+    return this.cachedTopicInfos
+  }
+
   private rebuildCameraTopicCache(): boolean {
     const next = preferCompressedCameraTopics(
       this.channels
@@ -662,6 +712,7 @@ class FoxgloveBridgeManager {
     this.servicesEnabled = false
     this.channels = []
     this.channelsById.clear()
+    this.cachedTopicInfos = []
     this.services = []
     this.pendingServiceCalls.clear()
     this.navFeedbackSubscriptionId = null
@@ -979,8 +1030,10 @@ class FoxgloveBridgeManager {
       sub.channelId = null
       sub.subscriptionId = null
     }
+    this.cachedTopicInfos = []
     this.notifyTopicListeners()
     this.notifyLidarTopicListeners()
+    this.notifyChannelListeners()
   }
 
   isConnected() {

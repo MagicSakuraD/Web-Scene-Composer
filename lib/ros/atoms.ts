@@ -106,7 +106,7 @@ export interface LidarDisplayConfig {
 }
 
 export const lidarDisplayAtom = atom<LidarDisplayConfig>({
-  visible: true,
+  visible: false,
   topic: DEFAULT_LIDAR_TOPIC,
   color: '#00ffcc',
   opacity: 0.85,

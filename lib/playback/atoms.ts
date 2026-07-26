@@ -33,6 +33,7 @@ export const playbackRateAtom = atom<number>(1)
 export const mcapFileNameAtom = atom<string | null>(null)
 
 export const mcapTopicsAtom = atom<McapTopicInfo[]>([])
+/** Topic visibility for Topics panel (shared: live Bridge + MCAP replay) */
 
 export const topicVisibilityAtom = atom<Record<string, boolean>>({})
 

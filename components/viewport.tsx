@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ViewportToolbar } from '@/components/viewport-toolbar'
+import { AnnotationHoverTooltip } from '@/components/annotations/annotation-hover-tooltip'
 import { openCreateContextMenu } from '@/components/create-context-menu'
 import { contextMenuAtom } from '@/lib/scene/atoms'
 import { appModeAtom } from '@/lib/playback/atoms'
@@ -31,6 +32,7 @@ export function Viewport() {
       >
         <SceneCanvas />
         <ViewportToolbar />
+        <AnnotationHoverTooltip />
       </div>
     </div>
   )

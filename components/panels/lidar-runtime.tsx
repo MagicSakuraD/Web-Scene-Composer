@@ -2,7 +2,7 @@
 
 import { useLidarViewer } from '@/hooks/use-lidar-viewer'
 
-/** Tab 存在即订阅（切换 Tab 不中断），关闭 Tab 才卸载 */
+/** 由 Topics 眼睛 / lidarDisplayAtom 驱动订阅；与底栏 Tab 无关 */
 export function LidarRuntime() {
   useLidarViewer(true)
   return null

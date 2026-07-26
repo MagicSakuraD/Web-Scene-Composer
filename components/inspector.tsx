@@ -113,9 +113,6 @@ export function Inspector() {
   if (!node) {
     return (
       <div className="h-full flex flex-col bg-sidebar flex-1 min-w-0">
-        <div className="px-3 py-2 border-b border-border">
-          <span className="text-sm font-medium text-muted-foreground">{t('inspector.title')}</span>
-        </div>
         <div className="flex-1 flex items-center justify-center p-4">
           <p className="text-xs text-muted-foreground text-center">
             {t('inspector.noSelection')}

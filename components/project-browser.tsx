@@ -33,7 +33,6 @@ import { DiffDriveRuntime } from '@/components/panels/diff-drive-runtime'
 import { CameraViewerPanel } from '@/components/panels/camera-viewer-panel'
 import { LidarViewerPanel } from '@/components/panels/lidar-viewer-panel'
 import { MaterialGraphPanel } from '@/components/panels/material-graph-panel'
-import { LidarRuntime } from '@/components/panels/lidar-runtime'
 import { NavGoalPanel } from '@/components/panels/nav-goal-panel'
 import { NavGoalRuntime } from '@/components/panels/nav-goal-runtime'
 import { ConsolePanel } from '@/components/panels/console-panel'
@@ -69,7 +68,7 @@ interface ProjectBrowserProps {
   onToggleCollapse: () => void
 }
 
-const PLAYBACK_TAB_TYPES = new Set(['console', 'camera-viewer', 'lidar-viewer'])
+const PLAYBACK_TAB_TYPES = new Set(['console', 'camera-viewer'])
 
 export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowserProps) {
   const [tabs, setTabs] = useAtom(bottomPanelTabsAtom)
@@ -90,7 +89,7 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
   useEffect(() => {
     if (appMode !== 'playback') return
     setTabs((prev) => {
-      const playbackTypes: BottomPanelTab['type'][] = ['camera-viewer', 'lidar-viewer', 'console']
+      const playbackTypes: BottomPanelTab['type'][] = ['camera-viewer', 'console']
       const missing = playbackTypes.filter((type) => !prev.some((tab) => tab.type === type))
       if (missing.length === 0) return prev
       const additions = missing.map((type) => {
@@ -106,7 +105,6 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
   }, [appMode, setTabs, t])
 
   const hasDiffDriveTab = tabs.some((t) => t.type === 'diff-drive')
-  const hasLidarTab = tabs.some((t) => t.type === 'lidar-viewer')
   const hasNavGoalTab = tabs.some((t) => t.type === 'nav-goal')
 
   const triggerImport = (toScene: boolean) => {
@@ -133,7 +131,6 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
     <div className="h-full flex flex-col bg-muted/20">
       <TimelineBar />
       {appMode === 'compose' && hasDiffDriveTab && <DiffDriveRuntime />}
-      {hasLidarTab && <LidarRuntime />}
       {appMode === 'compose' && hasNavGoalTab && <NavGoalRuntime />}
       <GltfFileInput ref={fileInputRef} onChange={handleFileChange} />
 

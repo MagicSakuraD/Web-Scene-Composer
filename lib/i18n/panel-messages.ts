@@ -1,11 +1,10 @@
 import type { BottomPanelTabType } from '@/lib/ros/atoms'
 import type { MessageKey } from './messages'
 
-/** 可「+」添加的底部面板类型（不含内置 project-browser / console / material-graph） */
+/** 可「+」添加的底部面板（雷达点云由 Topics 眼睛驱动，不再单独加 Tab） */
 export const ADDABLE_PANEL_TYPES: BottomPanelTabType[] = [
   'diff-drive',
   'camera-viewer',
-  'lidar-viewer',
   'nav-goal',
 ]
 

@@ -66,7 +66,6 @@ export function TimelineBar() {
   const togglePlay = useCallback(() => {
     if (playing) {
       playbackEngine.pause()
-      setPlaying(false)
       return
     }
     if (atEnd && range) {
