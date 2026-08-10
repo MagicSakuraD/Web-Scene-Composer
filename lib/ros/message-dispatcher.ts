@@ -24,12 +24,19 @@ import {
   isSceneUpdateSchema,
   type DecodedSceneUpdate,
 } from '@/lib/mcap/foxglove-scene-update-decode'
+import {
+  decodeFoxgloveCameraCalibration,
+  decodeRosCameraInfo,
+  isCameraInfoSchema,
+} from '@/lib/ros/decode-camera-info'
+import type { DecodedCameraInfo } from '@/lib/ros/camera-info-store'
 
 export interface DispatchHandlers {
   onOdom?: (pose: OdomMessage) => void
   onImage?: (topic: string, frame: DecodedCameraFrame) => void
   onPointCloud?: (topic: string, cloud: DecodedPointCloud) => void
   onSceneUpdate?: (topic: string, update: DecodedSceneUpdate) => void
+  onCameraInfo?: (topic: string, info: DecodedCameraInfo) => void
 }
 
 export interface DispatchMessageOptions {
@@ -65,6 +72,12 @@ export async function dispatchMcapMessage({
     if (schemaName === 'foxglove.PointCloud' || schemaName.includes('PointCloud')) {
       const cloud = decodeFoxglovePointCloud(schemaId, data)
       if (cloud) handlers.onPointCloud?.(topic, cloud)
+      return
+    }
+
+    if (schemaName === 'foxglove.CameraCalibration' || schemaName.includes('CameraCalibration')) {
+      const info = decodeFoxgloveCameraCalibration(topic, schemaId, data)
+      if (info) handlers.onCameraInfo?.(topic, info)
       return
     }
 
@@ -119,6 +132,12 @@ export async function dispatchMcapMessage({
   if (isLidarPointCloudTopic(topic, schemaName) || schemaName.includes('PointCloud2')) {
     const cloud = decodePointCloud2(data)
     if (cloud) handlers.onPointCloud?.(topic, cloud)
+    return
+  }
+
+  if (isCameraInfoSchema(schemaName) || /\/camera_info$/i.test(topic)) {
+    const info = decodeRosCameraInfo(topic, data)
+    if (info) handlers.onCameraInfo?.(topic, info)
     return
   }
 

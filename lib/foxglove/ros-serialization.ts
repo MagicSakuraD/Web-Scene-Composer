@@ -696,3 +696,76 @@ export function decodeOccupancyGrid(data: Uint8Array): DecodedOccupancyGrid | nu
     return null
   }
 }
+
+const btLogDefs = [
+  {
+    name: 'nav2_msgs/BehaviorTreeLog',
+    definitions: [
+      { name: 'timestamp', type: 'builtin_interfaces/Time', isComplex: true },
+      {
+        name: 'event_log',
+        type: 'nav2_msgs/BehaviorTreeStatusChange',
+        isComplex: true,
+        isArray: true,
+      },
+    ],
+  },
+  {
+    name: 'nav2_msgs/BehaviorTreeStatusChange',
+    definitions: [
+      { name: 'timestamp', type: 'builtin_interfaces/Time', isComplex: true },
+      { name: 'node_name', type: 'string' },
+      { name: 'uid', type: 'uint16' },
+      { name: 'previous_status', type: 'string' },
+      { name: 'current_status', type: 'string' },
+    ],
+  },
+  ros2humble['builtin_interfaces/Time'],
+]
+
+const btLogReader = new MessageReader(btLogDefs)
+
+export interface BehaviorTreeStatusChange {
+  nodeName: string
+  uid: number
+  previousStatus: string
+  currentStatus: string
+}
+
+export interface DecodedBehaviorTreeLog {
+  eventLog: BehaviorTreeStatusChange[]
+}
+
+let btLogDecodeFailLogged = false
+
+/** nav2_msgs/msg/BehaviorTreeLog — bt_navigator /behavior_tree_log */
+export function decodeBehaviorTreeLog(data: Uint8Array): DecodedBehaviorTreeLog | null {
+  try {
+    const msg = btLogReader.readMessage<{
+      event_log: Array<{
+        node_name: string
+        uid: number
+        previous_status: string
+        current_status: string
+      }>
+    }>(data)
+    if (!msg.event_log?.length) return { eventLog: [] }
+    return {
+      eventLog: msg.event_log.map((e) => ({
+        nodeName: e.node_name,
+        uid: e.uid,
+        previousStatus: e.previous_status,
+        currentStatus: e.current_status,
+      })),
+    }
+  } catch (err) {
+    if (!btLogDecodeFailLogged) {
+      btLogDecodeFailLogged = true
+      console.warn('[BT] decodeBehaviorTreeLog CDR 失败', {
+        byteLength: data.byteLength,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+    return null
+  }
+}

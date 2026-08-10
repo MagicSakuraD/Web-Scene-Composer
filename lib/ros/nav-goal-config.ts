@@ -13,3 +13,6 @@ export const LOCAL_PLAN_TOPIC = '/local_plan'
 /** Nav2 costmaps (nav_msgs/msg/OccupancyGrid) */
 export const LOCAL_COSTMAP_TOPIC = '/local_costmap/costmap'
 export const GLOBAL_COSTMAP_TOPIC = '/global_costmap/costmap'
+
+/** Nav2 bt_navigator behavior tree event log (nav2_msgs/msg/BehaviorTreeLog) */
+export const BT_LOG_TOPIC = '/behavior_tree_log'

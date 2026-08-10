@@ -17,6 +17,7 @@ import {
   decodeNavGoalStatus,
   decodeNavPath,
   decodeOccupancyGrid,
+  decodeBehaviorTreeLog,
   type CmdVel,
   type DecodedCameraFrame,
   type DecodedPointCloud,
@@ -38,12 +39,14 @@ import {
   NAV_FEEDBACK_TOPIC,
   NAV_GOAL_SERVICE,
   NAV_STATUS_TOPIC,
+  BT_LOG_TOPIC,
   LOCAL_PLAN_TOPIC,
   PLAN_SMOOTHED_TOPIC,
   PLAN_TOPIC,
 } from '@/lib/ros/nav-goal-config'
 import { navGoalStore } from '@/lib/ros/nav-goal-store'
 import { navPathStore } from '@/lib/ros/nav-path-store'
+import { btTimelineStore } from '@/lib/ros/bt-timeline-store'
 import {
   costmapStores,
   costmapStoreByTopic,
@@ -115,6 +118,7 @@ class FoxgloveBridgeManager {
   private navPlanSmoothedSubscriptionId: SubscriptionId | null = null
   private navPlanSubscriptionId: SubscriptionId | null = null
   private navLocalPlanSubscriptionId: SubscriptionId | null = null
+  private btLogSubscriptionId: SubscriptionId | null = null
   /** topic → 订阅 id（local + global costmap） */
   private costmapSubscriptionIds = new Map<string, SubscriptionId>()
   private navGoalActive = false
@@ -222,6 +226,7 @@ class FoxgloveBridgeManager {
             this.syncNavGoalSubscriptions(client)
             this.syncNavPathSubscriptions(client)
             this.syncCostmapSubscriptions(client)
+            this.syncBtLogSubscription(client)
           }
         })
 
@@ -250,6 +255,7 @@ class FoxgloveBridgeManager {
               this.syncNavGoalSubscriptions(client)
               this.syncNavPathSubscriptions(client)
               this.syncCostmapSubscriptions(client)
+              this.syncBtLogSubscription(client)
             }
           }
         })
@@ -369,6 +375,13 @@ class FoxgloveBridgeManager {
             const bytes = toUint8Array(event.data)
             const path = decodeNavPath(bytes)
             if (path) navPathStore.setPath(LOCAL_PLAN_TOPIC, path)
+            return
+          }
+
+          if (event.subscriptionId === this.btLogSubscriptionId) {
+            const bytes = toUint8Array(event.data)
+            const log = decodeBehaviorTreeLog(bytes)
+            if (log) btTimelineStore.applyStatusChanges(log.eventLog)
             return
           }
 
@@ -717,6 +730,10 @@ class FoxgloveBridgeManager {
     this.pendingServiceCalls.clear()
     this.navFeedbackSubscriptionId = null
     this.navStatusSubscriptionId = null
+    this.navPlanSmoothedSubscriptionId = null
+    this.navPlanSubscriptionId = null
+    this.navLocalPlanSubscriptionId = null
+    this.btLogSubscriptionId = null
     for (const sub of this.imageSubs.values()) {
       sub.channelId = null
       sub.subscriptionId = null
@@ -767,6 +784,7 @@ class FoxgloveBridgeManager {
       if (!active) {
         navGoalStore.setServicesReady(false)
         this.unsubscribeAllCostmaps()
+        btTimelineStore.reset()
       }
       return
     }
@@ -774,9 +792,11 @@ class FoxgloveBridgeManager {
       this.syncNavGoalSubscriptions(this.client)
       this.syncNavPathSubscriptions(this.client)
       this.syncCostmapSubscriptions(this.client)
+      this.syncBtLogSubscription(this.client)
     } else {
       this.unsubscribeNavGoalTopics()
       this.unsubscribeAllCostmaps()
+      btTimelineStore.reset()
       navGoalStore.setServicesReady(false)
       navPathStore.reset()
     }
@@ -830,6 +850,20 @@ class FoxgloveBridgeManager {
       this.navLocalPlanSubscriptionId = client.subscribe(local.id)
       this.log({ level: 'info', message: `已订阅 ${LOCAL_PLAN_TOPIC}` })
     }
+  }
+
+  /** Nav Goal 面板：订阅 Nav2 行为树事件日志 */
+  private syncBtLogSubscription(client: FoxgloveClient) {
+    const channel =
+      this.channels.find((c) => c.topic === BT_LOG_TOPIC) ??
+      this.channels.find((c) => c.topic.endsWith('/behavior_tree_log'))
+    if (channel && this.btLogSubscriptionId == null) {
+      this.btLogSubscriptionId = client.subscribe(channel.id)
+      btTimelineStore.setSubscribed(true)
+      this.log({ level: 'info', message: `已订阅 ${channel.topic}（BT 决策时间线）` })
+      return
+    }
+    btTimelineStore.setSubscribed(this.btLogSubscriptionId != null)
   }
 
   /** 面板开关打开时才订阅对应 costmap（带宽较大） */
@@ -898,6 +932,11 @@ class FoxgloveBridgeManager {
       this.client.unsubscribe(this.navLocalPlanSubscriptionId)
       this.navLocalPlanSubscriptionId = null
     }
+    if (this.btLogSubscriptionId != null) {
+      this.client.unsubscribe(this.btLogSubscriptionId)
+      this.btLogSubscriptionId = null
+    }
+    btTimelineStore.setSubscribed(false)
     navPathStore.reset()
   }
 
@@ -933,6 +972,7 @@ class FoxgloveBridgeManager {
   async sendNavigateToPose(pose: RosPoseStamped): Promise<{ success: boolean; message: string }> {
     navGoalStore.beginNewGoal('正在发送导航目标…')
     navPathStore.reset()
+    btTimelineStore.beginMission()
     try {
       const data = await this.callService(NAV_GOAL_SERVICE, encodeNavigateToPoseRequest(pose))
       const decoded = decodeBoolStringResponse(data)
@@ -1016,6 +1056,7 @@ class FoxgloveBridgeManager {
     this.pendingServiceCalls.clear()
     this.costmapSubscriptionIds.clear()
     navPathStore.reset()
+    btTimelineStore.reset()
     for (const store of costmapStores) {
       store.setSubscribed(false)
       store.clearGrid()

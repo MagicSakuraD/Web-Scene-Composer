@@ -30,6 +30,7 @@ import {
 } from '@/lib/ros/costmap-store'
 import { useI18n } from '@/hooks/use-i18n'
 import { Switch } from '@/components/ui/switch'
+import { BehaviorTimeline } from '@/components/panels/behavior-timeline'
 import { cn } from '@/lib/utils'
 import type { MessageKey } from '@/lib/i18n/messages'
 import type { SceneNode } from '@/lib/scene/types'
@@ -349,6 +350,8 @@ export function NavGoalPanel() {
           )}
         </section>
       </div>
+
+      {simActive && <BehaviorTimeline className="shrink-0" />}
     </div>
   )
 }

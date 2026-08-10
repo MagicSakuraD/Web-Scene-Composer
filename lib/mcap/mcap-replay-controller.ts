@@ -18,10 +18,13 @@ import type { DecodedSceneUpdate } from '@/lib/mcap/foxglove-scene-update-decode
 import { isSceneUpdateSchema } from '@/lib/mcap/foxglove-scene-update-decode'
 import type { McapTopicInfo } from '@/lib/playback/atoms'
 import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
+import type { DecodedCameraInfo } from '@/lib/ros/camera-info-store'
+import { isCameraInfoSchema } from '@/lib/ros/decode-camera-info'
 
 type ImageFrameFn = (topic: string, frame: DecodedCameraFrame) => void
 type PointCloudFn = (topic: string, cloud: DecodedPointCloud) => void
 type SceneUpdateFn = (topic: string, update: DecodedSceneUpdate) => void
+type CameraInfoFn = (topic: string, info: DecodedCameraInfo) => void
 type OdomFn = (pose: OdomMessage) => void
 
 interface ChannelMeta {
@@ -52,6 +55,7 @@ class McapReplayController {
   private imageSubs = new Map<string, Set<ImageFrameFn>>()
   private pointCloudSubs = new Map<string, Set<PointCloudFn>>()
   private sceneUpdateSubs = new Map<string, Set<SceneUpdateFn>>()
+  private cameraInfoSubs = new Map<string, Set<CameraInfoFn>>()
   private onOdom: OdomFn | null = null
   private flushing = false
   private flushQueued: bigint | null = null
@@ -160,6 +164,23 @@ class McapReplayController {
     }
   }
 
+  subscribeCameraInfo(topic: string, callback: CameraInfoFn): () => void {
+    let set = this.cameraInfoSubs.get(topic)
+    const isNewTopic = !set
+    if (!set) {
+      set = new Set()
+      this.cameraInfoSubs.set(topic, set)
+    }
+    set.add(callback)
+    if (isNewTopic) this.reflushAfterSubscribe()
+    return () => {
+      const current = this.cameraInfoSubs.get(topic)
+      if (!current) return
+      current.delete(callback)
+      if (current.size === 0) this.cameraInfoSubs.delete(topic)
+    }
+  }
+
   /** Debounce full seek reflush — rapid eye toggles / remounts must not stack seeks */
   private reflushAfterSubscribe() {
     if (!this.reader || this.lastFlushTimeNs === BigInt(0)) return
@@ -177,12 +198,16 @@ class McapReplayController {
     if (
       this.imageSubs.has(topic) ||
       this.pointCloudSubs.has(topic) ||
-      this.sceneUpdateSubs.has(topic)
+      this.sceneUpdateSubs.has(topic) ||
+      this.cameraInfoSubs.has(topic)
     ) {
       return true
     }
     if (messageEncoding === 'protobuf' && schemaName.includes('PointCloud')) {
       return this.pointCloudSubs.size > 0
+    }
+    if (isCameraInfoSchema(schemaName) && this.cameraInfoSubs.has(topic)) {
+      return true
     }
     return false
   }
@@ -192,12 +217,14 @@ class McapReplayController {
       return (
         schemaName.includes('PointCloud') ||
         schemaName.includes('CompressedImage') ||
+        schemaName.includes('CameraCalibration') ||
         isSceneUpdateSchema(schemaName)
       )
     }
     return (
       schemaName.includes('PointCloud2') ||
       schemaName.includes('CompressedImage') ||
+      schemaName.includes('CameraInfo') ||
       schemaName.includes('/Image')
     )
   }
@@ -292,6 +319,9 @@ class McapReplayController {
       },
       onSceneUpdate: (topic: string, update: DecodedSceneUpdate) => {
         for (const cb of this.sceneUpdateSubs.get(topic) ?? []) cb(topic, update)
+      },
+      onCameraInfo: (topic: string, info: DecodedCameraInfo) => {
+        for (const cb of this.cameraInfoSubs.get(topic) ?? []) cb(topic, info)
       },
     }
 

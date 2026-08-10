@@ -28,11 +28,13 @@ import { SelectionBoundingBox } from './selection-bounding-box'
 import { RuntimeRobotSync } from './runtime-robot-sync'
 import { LidarPointCloud } from './lidar-point-cloud'
 import { SceneAnnotationCubes } from './scene-annotation-cubes'
+import { CameraFrustumProjections } from './camera-frustum-projections'
 import { EditableAnnotationBoxes } from '@/components/annotations/editable-annotation-boxes'
 import { AnnotationTransformGizmo } from '@/components/annotations/annotation-transform-gizmo'
 import { showReadonlySceneAnnotationsAtom } from '@/lib/annotations/atoms'
 import { NavPathLines } from './nav-path-lines'
 import { CostmapOverlay } from './costmap-overlay'
+import { NavRecoveryHud } from './nav-recovery-hud'
 import { MaterialGraphSync } from './material-graph-sync'
 import { ViewportSceneHelpers } from './viewport-scene-helpers'
 import { PhysicalDistantLightNode } from './physical-distant-light-node'
@@ -332,9 +334,11 @@ export function SceneRenderer() {
       <RuntimeRobotSync />
       {VIEWPORT_WEBGPU_FEATURES.lidarPointCloud ? <LidarPointCloud /> : null}
       {showReadonly ? <SceneAnnotationCubes /> : null}
+      <CameraFrustumProjections />
       <EditableAnnotationBoxes />
       <NavPathLines />
       <CostmapOverlay />
+      <NavRecoveryHud />
       {VIEWPORT_WEBGPU_FEATURES.materialGraph ? <MaterialGraphSync /> : null}
       {tree.map((node) => (
         <SceneNodeObject key={node.id} node={node} />

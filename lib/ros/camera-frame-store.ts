@@ -147,6 +147,11 @@ class CameraFrameStore {
     this.generations.clear()
     this.listeners.forEach((l) => l())
   }
+
+  /** 视锥纹理：返回最近一帧 ImageBitmap（调用方勿 close；由 store 管理生命周期） */
+  getBitmap(topic: string): ImageBitmap | null {
+    return this.lastBitmaps.get(topic) ?? null
+  }
 }
 
 export const cameraFrameStore = new CameraFrameStore()

@@ -21,10 +21,12 @@ import { playbackEngine } from '@/lib/playback/playback-engine'
 import { foxgloveManager } from '@/lib/foxglove/client-manager'
 import {
   cameraViewerTopicsAtom,
+  cameraFrustumByTopicAtom,
   lidarDisplayAtom,
   simulateStatusAtom,
 } from '@/lib/ros/atoms'
 import { cameraFrameStore } from '@/lib/ros/camera-frame-store'
+import { cameraInfoStore } from '@/lib/ros/camera-info-store'
 import { lidarPointStore } from '@/lib/ros/lidar-point-store'
 import { sceneEntityStore } from '@/lib/ros/scene-entity-store'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
@@ -46,6 +48,7 @@ export function useOpenMcap() {
   const setLoading = useSetAtom(mcapLoadingAtom)
   const setCameraTopics = useSetAtom(cameraViewerTopicsAtom)
   const setLidarDisplay = useSetAtom(lidarDisplayAtom)
+  const setCameraFrustum = useSetAtom(cameraFrustumByTopicAtom)
 
   const openFile = useCallback(
     async (file: File) => {
@@ -60,11 +63,13 @@ export function useOpenMcap() {
         }
 
         cameraFrameStore.clearAll()
+        cameraInfoStore.clearAll()
         lidarPointStore.clearAll()
         sceneEntityStore.clearAll()
         runtimePoseStore.reset()
         tfRuntimeStore.reset()
         odomSceneCalibration.reset()
+        setCameraFrustum({})
 
         const { loadMcapFile } = await import('@/lib/mcap/mcap-loader')
         const result = await loadMcapFile(file)
@@ -113,6 +118,7 @@ export function useOpenMcap() {
       setPlaybackTime,
       setPlaying,
       setRange,
+      setCameraFrustum,
       setSelectedTopic,
       setTopicVisibility,
       setTopics,
@@ -124,11 +130,13 @@ export function useOpenMcap() {
     mcapReplayController.close()
     protobufRegistry.reset()
     cameraFrameStore.clearAll()
+    cameraInfoStore.clearAll()
     lidarPointStore.clearAll()
     sceneEntityStore.clearAll()
     runtimePoseStore.reset()
     tfRuntimeStore.reset()
     odomSceneCalibration.reset()
+    setCameraFrustum({})
     setDataSourceMode('idle')
     setFileName(null)
     setTopics([])
@@ -140,6 +148,7 @@ export function useOpenMcap() {
     setLidarDisplay((prev) => ({ ...prev, visible: false }))
     setError(null)
   }, [
+    setCameraFrustum,
     setCameraTopics,
     setDataSourceMode,
     setError,

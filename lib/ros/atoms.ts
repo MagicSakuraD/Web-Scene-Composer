@@ -116,6 +116,30 @@ export const lidarDisplayAtom = atom<LidarDisplayConfig>({
   extraRotationY: 0,
 })
 
+/** Foxglove-style CameraInfo frustum + image plane (per camera_info topic) */
+export interface CameraFrustumSettings {
+  enabled: boolean
+  /** meters — Foxglove “Distance” */
+  distance: number
+  /** 0 = spherical, 1 = flat — Foxglove “Planar projection factor” */
+  planarFactor: number
+  lineWidth: number
+  wireColor: string
+  imageOpacity: number
+}
+
+export const DEFAULT_CAMERA_FRUSTUM: CameraFrustumSettings = {
+  enabled: false,
+  distance: 1,
+  planarFactor: 0,
+  lineWidth: 0.01,
+  wireColor: '#7cb6ff',
+  imageOpacity: 0.92,
+}
+
+/** topic (camera_info) → settings */
+export const cameraFrustumByTopicAtom = atom<Record<string, CameraFrustumSettings>>({})
+
 export type NavGoalPhase = 'idle' | 'sending' | 'navigating' | 'succeeded' | 'canceled' | 'aborted' | 'failed'
 
 export interface NavGoalState {

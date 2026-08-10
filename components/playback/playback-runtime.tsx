@@ -5,10 +5,11 @@ import { usePlaybackShortcuts } from '@/hooks/use-playback-shortcuts'
 import { useTopicVisibilityBridge } from '@/hooks/use-topic-visibility-bridge'
 import { useLiveTopicsSync } from '@/hooks/use-live-topics-sync'
 import { useSceneAnnotations } from '@/hooks/use-scene-annotations'
+import { useCameraFrustum } from '@/hooks/use-camera-frustum'
 import { LidarRuntime } from '@/components/panels/lidar-runtime'
 
 /**
- * 全局数据源副作用：MCAP / Live Topics、显隐桥、点云、SceneUpdate 标注。
+ * 全局数据源副作用：MCAP / Live Topics、显隐桥、点云、SceneUpdate 标注、CameraInfo 视锥。
  */
 export function PlaybackRuntime() {
   useMcapOdomBridge()
@@ -16,5 +17,6 @@ export function PlaybackRuntime() {
   useLiveTopicsSync()
   useTopicVisibilityBridge()
   useSceneAnnotations()
+  useCameraFrustum()
   return <LidarRuntime />
 }

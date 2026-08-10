@@ -10,8 +10,16 @@ import {
   topicVisibilityAtom,
   type McapTopicInfo,
 } from '@/lib/playback/atoms'
-import { simulateStatusAtom, lidarDisplayAtom, type LidarColorMode } from '@/lib/ros/atoms'
+import {
+  simulateStatusAtom,
+  lidarDisplayAtom,
+  cameraFrustumByTopicAtom,
+  DEFAULT_CAMERA_FRUSTUM,
+  type LidarColorMode,
+} from '@/lib/ros/atoms'
 import { isLidarPointCloudTopic } from '@/lib/foxglove/ros-serialization'
+import { isCameraInfoTopic } from '@/lib/ros/resolve-camera-topics'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/hooks/use-i18n'
 
@@ -79,6 +87,102 @@ function PointCloudInlineSettings({ topic }: { topic: string }) {
   )
 }
 
+function CameraInfoInlineSettings({ topic }: { topic: string }) {
+  const [byTopic, setByTopic] = useAtom(cameraFrustumByTopicAtom)
+  const [visibility, setVisibility] = useAtom(topicVisibilityAtom)
+  const { t } = useI18n()
+  const settings = byTopic[topic] ?? DEFAULT_CAMERA_FRUSTUM
+  const enabled = visibility[topic] === true
+
+  const patch = (partial: Partial<typeof settings>) => {
+    setByTopic((prev) => ({
+      ...prev,
+      [topic]: { ...(prev[topic] ?? DEFAULT_CAMERA_FRUSTUM), ...partial },
+    }))
+  }
+
+  return (
+    <div className="px-2 py-2 space-y-1.5 border-t border-border/60">
+      <label className="flex items-center justify-between gap-2 text-[10px]">
+        <span className="text-muted-foreground">{t('playback.topicTree.frustum')}</span>
+        <Switch
+          checked={enabled}
+          onCheckedChange={(checked) => {
+            setVisibility((prev) => ({ ...prev, [topic]: checked }))
+            patch({ enabled: checked })
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </label>
+      {!enabled ? (
+        <div className="text-[10px] text-muted-foreground">
+          {t('playback.topicTree.enableToConfigure')}
+        </div>
+      ) : (
+        <>
+          <label className="flex items-center justify-between gap-2 text-[10px]">
+            <span className="text-muted-foreground">{t('playback.topicTree.distance')}</span>
+            <input
+              type="number"
+              min={0.1}
+              max={100}
+              step={0.1}
+              value={settings.distance}
+              className="w-16 bg-input border border-border rounded px-1.5 py-0.5 text-[10px] tabular-nums"
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value)
+                if (Number.isFinite(v) && v > 0) patch({ distance: v })
+              }}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-2 text-[10px]">
+            <span className="text-muted-foreground">
+              {t('playback.topicTree.planarFactor')}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={settings.planarFactor}
+              className="flex-1 max-w-[9rem]"
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => patch({ planarFactor: parseFloat(e.target.value) })}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-2 text-[10px]">
+            <span className="text-muted-foreground">{t('playback.topicTree.lineWidth')}</span>
+            <input
+              type="number"
+              min={0.001}
+              max={0.2}
+              step={0.001}
+              value={settings.lineWidth}
+              className="w-16 bg-input border border-border rounded px-1.5 py-0.5 text-[10px] tabular-nums"
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value)
+                if (Number.isFinite(v) && v > 0) patch({ lineWidth: v })
+              }}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-2 text-[10px]">
+            <span className="text-muted-foreground">{t('playback.topicTree.wireColor')}</span>
+            <input
+              type="color"
+              value={settings.wireColor.slice(0, 7)}
+              className="h-5 w-10 rounded border border-border bg-transparent"
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => patch({ wireColor: e.target.value })}
+            />
+          </label>
+        </>
+      )}
+    </div>
+  )
+}
+
 function TopicRow({ item }: { item: McapTopicInfo }) {
   const [selected, setSelected] = useAtom(selectedTopicAtom)
   const [visibility, setVisibility] = useAtom(topicVisibilityAtom)
@@ -88,14 +192,16 @@ function TopicRow({ item }: { item: McapTopicInfo }) {
   const visible = visibility[item.topic] === true
   const isSelected = selected === item.topic
   const isPointCloud = isLidarPointCloudTopic(item.topic, item.schemaName)
-  const showSettings = isPointCloud && expanded
+  const isCameraInfo = isCameraInfoTopic(item.topic, item.schemaName)
+  const canExpand = isPointCloud || isCameraInfo
+  const showSettings = canExpand && expanded
 
   return (
     <div
       className={cn(
         'mx-1 mb-0.5 rounded-md overflow-hidden',
         isSelected && 'bg-selection-accent/20 ring-1 ring-selection-accent/40',
-        visible && isPointCloud && 'bg-primary/5',
+        visible && (isPointCloud || isCameraInfo) && 'bg-primary/5',
       )}
     >
       <div
@@ -106,10 +212,10 @@ function TopicRow({ item }: { item: McapTopicInfo }) {
         )}
         onClick={() => {
           setSelected(item.topic)
-          if (isPointCloud) setExpanded((v) => !v)
+          if (canExpand) setExpanded((v) => !v)
         }}
       >
-        {isPointCloud ? (
+        {canExpand ? (
           <button
             type="button"
             className="p-0.5 rounded hover:bg-accent/80 flex-shrink-0"
@@ -146,7 +252,7 @@ function TopicRow({ item }: { item: McapTopicInfo }) {
           onClick={(e) => {
             e.stopPropagation()
             setVisibility((prev) => ({ ...prev, [item.topic]: !visible }))
-            if (!visible && isPointCloud) setExpanded(true)
+            if (!visible && canExpand) setExpanded(true)
           }}
         >
           {visible ? (
@@ -156,7 +262,8 @@ function TopicRow({ item }: { item: McapTopicInfo }) {
           )}
         </button>
       </div>
-      {showSettings && <PointCloudInlineSettings topic={item.topic} />}
+      {showSettings && isPointCloud && <PointCloudInlineSettings topic={item.topic} />}
+      {showSettings && isCameraInfo && <CameraInfoInlineSettings topic={item.topic} />}
     </div>
   )
 }
