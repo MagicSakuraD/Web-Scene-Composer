@@ -13,20 +13,20 @@ import {
   DEFAULT_CAMERA_FRUSTUM,
 } from '@/lib/ros/atoms'
 import { mcapReplayController } from '@/lib/mcap/mcap-replay-controller'
+import { foxgloveManager } from '@/lib/foxglove/client-manager'
 import { cameraInfoStore } from '@/lib/ros/camera-info-store'
-import { cameraFrameStore } from '@/lib/ros/camera-frame-store'
-import { isCameraInfoTopic, resolveImageTopicForInfo } from '@/lib/ros/resolve-camera-topics'
+import { isCameraInfoTopic } from '@/lib/ros/resolve-camera-topics'
 
-/** 启用中的 camera_info 话题：订阅标定 + 配对图像写入 frame store */
+/**
+ * camera_info 眼睛 → 仅订阅标定、画视锥线框。
+ * 图像眼睛由 topicVisibilityBridge + useCameraViewer 单独订阅，互不强制绑定。
+ */
 export function useCameraFrustum() {
   const dataSourceActive = useAtomValue(dataSourceActiveAtom)
   const dataSourceMode = useAtomValue(dataSourceModeAtom)
   const topics = useAtomValue(mcapTopicsAtom)
   const visibility = useAtomValue(topicVisibilityAtom)
   const setFrustumByTopic = useSetAtom(cameraFrustumByTopicAtom)
-  const setVisibility = useSetAtom(topicVisibilityAtom)
-
-  const availableTopics = useMemo(() => topics.map((t) => t.topic), [topics])
 
   const enabledInfoTopics = useMemo(() => {
     return topics
@@ -38,7 +38,6 @@ export function useCameraFrustum() {
       .map((t) => t.topic)
   }, [topics, visibility])
 
-  // Ensure settings exist + auto-enable paired image when camera_info becomes visible
   useEffect(() => {
     if (enabledInfoTopics.length === 0) return
 
@@ -56,22 +55,8 @@ export function useCameraFrustum() {
       }
       return changed ? next : prev
     })
+  }, [enabledInfoTopics, setFrustumByTopic])
 
-    setVisibility((prev) => {
-      let changed = false
-      const next = { ...prev }
-      for (const infoTopic of enabledInfoTopics) {
-        const imageTopic = resolveImageTopicForInfo(infoTopic, availableTopics)
-        if (imageTopic && next[imageTopic] !== true) {
-          next[imageTopic] = true
-          changed = true
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [enabledInfoTopics, availableTopics, setFrustumByTopic, setVisibility])
-
-  // Mark frustum disabled when eye turns off
   useEffect(() => {
     setFrustumByTopic((prev) => {
       let changed = false
@@ -88,27 +73,28 @@ export function useCameraFrustum() {
   }, [visibility, setFrustumByTopic])
 
   useEffect(() => {
-    if (!dataSourceActive || dataSourceMode !== 'replay' || enabledInfoTopics.length === 0) {
+    if (
+      !dataSourceActive ||
+      (dataSourceMode !== 'replay' && dataSourceMode !== 'live') ||
+      enabledInfoTopics.length === 0
+    ) {
       return
     }
 
     const unsubs: Array<() => void> = []
     const infoTopics = [...enabledInfoTopics]
 
+    const subscribeInfo =
+      dataSourceMode === 'live'
+        ? foxgloveManager.subscribeCameraInfo.bind(foxgloveManager)
+        : mcapReplayController.subscribeCameraInfo.bind(mcapReplayController)
+
     for (const infoTopic of infoTopics) {
       unsubs.push(
-        mcapReplayController.subscribeCameraInfo(infoTopic, (_, info) => {
+        subscribeInfo(infoTopic, (_, info) => {
           cameraInfoStore.set(info)
         }),
       )
-      const imageTopic = resolveImageTopicForInfo(infoTopic, availableTopics)
-      if (imageTopic) {
-        unsubs.push(
-          mcapReplayController.subscribeImage(imageTopic, (_, frame) => {
-            cameraFrameStore.setFrame(imageTopic, frame)
-          }),
-        )
-      }
     }
 
     return () => {
@@ -117,5 +103,5 @@ export function useCameraFrustum() {
         cameraInfoStore.clearTopic(infoTopic)
       }
     }
-  }, [dataSourceActive, dataSourceMode, enabledInfoTopics, availableTopics])
+  }, [dataSourceActive, dataSourceMode, enabledInfoTopics])
 }

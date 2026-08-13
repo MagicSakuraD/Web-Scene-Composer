@@ -80,10 +80,10 @@ export function decodeOdometry(data: Uint8Array): OdomMessage | null {
 }
 
 const imageDefs = [
-  ros2humble['sensor_msgs/Image'],
-  ros2humble['std_msgs/Header'],
-  ros2humble['builtin_interfaces/Time'],
-]
+  (ros2jazzy ?? ros2humble)['sensor_msgs/Image'],
+  (ros2jazzy ?? ros2humble)['std_msgs/Header'],
+  (ros2jazzy ?? ros2humble)['builtin_interfaces/Time'],
+].filter((d): d is NonNullable<typeof d> => d != null)
 
 const compressedImageDefs = [
   (ros2jazzy ?? ros2humble)['sensor_msgs/CompressedImage'],
@@ -324,11 +324,91 @@ export function decodePointCloud2(data: Uint8Array): DecodedPointCloud | null {
 
 export function isLidarPointCloudTopic(topic: string, schemaName?: string): boolean {
   if (schemaName) {
+    if (schemaName.includes('LaserScan')) return false
     return schemaName.includes('PointCloud2') || schemaName.includes('foxglove.PointCloud')
   }
-  // 无 schema 时保守匹配，排除 costmap / occupancy 等非点云话题
+  // 无 schema 时保守匹配，排除 costmap / occupancy / LaserScan 等
   if (/costmap|occupancy|CostmapUpdate|_layer$/i.test(topic)) return false
+  if (/\/scan$|laser_scan|LaserScan/i.test(topic)) return false
   return /lidar|LIDAR|point_cloud|\/points$|cost_cloud|RADAR/i.test(topic)
+}
+
+const laserScanDefs = [
+  ros2msgs['sensor_msgs/LaserScan'] ?? ros2humble['sensor_msgs/LaserScan'],
+  ros2msgs['std_msgs/Header'] ?? ros2humble['std_msgs/Header'],
+  ros2msgs['builtin_interfaces/Time'] ?? ros2humble['builtin_interfaces/Time'],
+].filter((d): d is NonNullable<typeof d> => d != null)
+
+const laserScanReader =
+  laserScanDefs.length >= 1 ? new MessageReader(laserScanDefs) : null
+
+export interface DecodedLaserScan {
+  frameId: string
+  stampSec: number
+  stampNanosec: number
+  angleMin: number
+  angleMax: number
+  angleIncrement: number
+  rangeMin: number
+  rangeMax: number
+  pointCount: number
+  /** laser frame xyz interleaved */
+  positions: Float32Array
+}
+
+/** sensor_msgs/msg/LaserScan → polar → Cartesian in laser frame (z=0) */
+export function decodeLaserScan(data: Uint8Array): DecodedLaserScan | null {
+  if (!laserScanReader) return null
+  try {
+    const msg = laserScanReader.readMessage<{
+      header: { stamp: { sec: number; nanosec: number }; frame_id: string }
+      angle_min: number
+      angle_max: number
+      angle_increment: number
+      range_min: number
+      range_max: number
+      ranges: number[] | Float32Array
+    }>(data)
+    const ranges = msg.ranges
+    const n = ranges?.length ?? 0
+    if (n <= 0) return null
+    const angleMin = Number(msg.angle_min)
+    const angleInc = Number(msg.angle_increment)
+    const rangeMin = Number(msg.range_min)
+    const rangeMax = Number(msg.range_max)
+    const positions = new Float32Array(n * 3)
+    let count = 0
+    for (let i = 0; i < n; i++) {
+      const r = Number(ranges[i])
+      if (!Number.isFinite(r) || r < rangeMin || r > rangeMax) continue
+      const angle = angleMin + i * angleInc
+      const idx = count * 3
+      positions[idx] = r * Math.cos(angle)
+      positions[idx + 1] = r * Math.sin(angle)
+      positions[idx + 2] = 0
+      count++
+    }
+    if (count === 0) return null
+    return {
+      frameId: msg.header?.frame_id ?? '',
+      stampSec: msg.header?.stamp?.sec ?? 0,
+      stampNanosec: msg.header?.stamp?.nanosec ?? 0,
+      angleMin,
+      angleMax: Number(msg.angle_max),
+      angleIncrement: angleInc,
+      rangeMin,
+      rangeMax,
+      pointCount: count,
+      positions: positions.subarray(0, count * 3),
+    }
+  } catch {
+    return null
+  }
+}
+
+export function isLaserScanTopic(topic: string, schemaName?: string): boolean {
+  if (schemaName?.includes('LaserScan')) return true
+  return /\/scan$|laser_scan|LaserScan/i.test(topic)
 }
 
 const poseStampedDefs = [

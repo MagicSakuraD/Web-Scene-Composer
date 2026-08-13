@@ -7,16 +7,22 @@ import {
   mcapTopicsAtom,
   topicVisibilityAtom,
 } from '@/lib/playback/atoms'
-import { cameraViewerTopicsAtom, lidarDisplayAtom } from '@/lib/ros/atoms'
+import {
+  cameraViewerTopicsAtom,
+  lidarDisplayAtom,
+  laserScanDisplayAtom,
+} from '@/lib/ros/atoms'
 import {
   isCameraImageTopic,
+  isLaserScanTopic,
   isLidarPointCloudTopic,
   preferCompressedCameraTopics,
 } from '@/lib/foxglove/ros-serialization'
 
 /**
- * Topic 树显隐 → 摄像头网格与雷达点云（live Bridge 与 MCAP 回放共用）。
- * 点云：同时只激活一个可见话题。
+ * Topic 树显隐 → 摄像头预览列表 / 点云 / LaserScan（live 与 MCAP 共用）。
+ * 图像：眼睛为唯一真相 → cameraViewerTopicsAtom（面板只预览，不单独拥有订阅）。
+ * 点云：同时只激活一个；LaserScan：可同时多个。
  */
 export function useTopicVisibilityBridge() {
   const dataSourceMode = useAtomValue(dataSourceModeAtom)
@@ -24,6 +30,7 @@ export function useTopicVisibilityBridge() {
   const [visibility, setVisibility] = useAtom(topicVisibilityAtom)
   const setCameraTopics = useSetAtom(cameraViewerTopicsAtom)
   const setLidarDisplay = useSetAtom(lidarDisplayAtom)
+  const setLaserScanDisplay = useSetAtom(laserScanDisplayAtom)
   const lidarTopicRef = useRef('')
 
   useEffect(() => {
@@ -47,6 +54,21 @@ export function useTopicVisibilityBridge() {
         visibility[t.topic] === true &&
         isLidarPointCloudTopic(t.topic, t.schemaName),
     )
+
+    const visibleLaserScans = topics
+      .filter(
+        (t) =>
+          visibility[t.topic] === true &&
+          isLaserScanTopic(t.topic, t.schemaName),
+      )
+      .map((t) => t.topic)
+
+    setLaserScanDisplay((prev) => {
+      const same =
+        prev.topics.length === visibleLaserScans.length &&
+        prev.topics.every((t, i) => t === visibleLaserScans[i])
+      return same ? prev : { ...prev, topics: visibleLaserScans }
+    })
 
     if (visiblePointClouds.length === 0) {
       lidarTopicRef.current = ''
@@ -89,6 +111,7 @@ export function useTopicVisibilityBridge() {
     visibility,
     setCameraTopics,
     setLidarDisplay,
+    setLaserScanDisplay,
     setVisibility,
   ])
 }

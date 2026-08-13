@@ -15,6 +15,11 @@ export interface TfEdge {
   updatedAt: number
 }
 
+export interface TfTreeNode {
+  frame: string
+  children: TfTreeNode[]
+}
+
 type Listener = () => void
 
 function identityPose(): RosTransform {
@@ -129,6 +134,46 @@ class TfRuntimeStore {
 
   getEdge(childFrame: string): TfEdge | undefined {
     return this.edges.get(normalizeFrameId(childFrame))
+  }
+
+  /** 当前所有 TF 边（child → parent） */
+  getEdges(): TfEdge[] {
+    return Array.from(this.edges.values())
+  }
+
+  /** 出现过的全部 frame id（含仅作 parent 的根） */
+  getFrameIds(): string[] {
+    const ids = new Set<string>()
+    for (const edge of this.edges.values()) {
+      ids.add(edge.childFrame)
+      ids.add(edge.parentFrame)
+    }
+    return Array.from(ids).sort((a, b) => a.localeCompare(b))
+  }
+
+  /** 构建森林：根为没有任何 child→parent 边指向的 frame */
+  getFrameTree(): TfTreeNode[] {
+    const childrenByParent = new Map<string, string[]>()
+    const childSet = new Set<string>()
+    for (const edge of this.edges.values()) {
+      childSet.add(edge.childFrame)
+      let list = childrenByParent.get(edge.parentFrame)
+      if (!list) {
+        list = []
+        childrenByParent.set(edge.parentFrame, list)
+      }
+      list.push(edge.childFrame)
+    }
+    for (const list of childrenByParent.values()) {
+      list.sort((a, b) => a.localeCompare(b))
+    }
+    const all = this.getFrameIds()
+    const roots = all.filter((id) => !childSet.has(id)).sort((a, b) => a.localeCompare(b))
+    const build = (frame: string): TfTreeNode => ({
+      frame,
+      children: (childrenByParent.get(frame) ?? []).map(build),
+    })
+    return roots.map(build)
   }
 
   hasWheelData(): boolean {

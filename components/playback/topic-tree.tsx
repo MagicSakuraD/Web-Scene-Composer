@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Eye, EyeOff, Radio } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react'
 import { useAtom, useAtomValue } from 'jotai'
 import {
   dataSourceModeAtom,
@@ -13,12 +13,17 @@ import {
 import {
   simulateStatusAtom,
   lidarDisplayAtom,
+  laserScanDisplayAtom,
   cameraFrustumByTopicAtom,
   DEFAULT_CAMERA_FRUSTUM,
   type LidarColorMode,
 } from '@/lib/ros/atoms'
-import { isLidarPointCloudTopic } from '@/lib/foxglove/ros-serialization'
+import {
+  isLaserScanTopic,
+  isLidarPointCloudTopic,
+} from '@/lib/foxglove/ros-serialization'
 import { isCameraInfoTopic } from '@/lib/ros/resolve-camera-topics'
+import { getTopicTypeIcon } from '@/lib/playback/topic-icons'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/hooks/use-i18n'
@@ -183,6 +188,50 @@ function CameraInfoInlineSettings({ topic }: { topic: string }) {
   )
 }
 
+function LaserScanInlineSettings({ topic }: { topic: string }) {
+  const [config, setConfig] = useAtom(laserScanDisplayAtom)
+  const isActive = config.topics.includes(topic)
+  const { t } = useI18n()
+
+  if (!isActive) {
+    return (
+      <div className="px-2 py-1.5 text-[10px] text-muted-foreground">
+        {t('playback.topicTree.enableToConfigure')}
+      </div>
+    )
+  }
+
+  return (
+    <div className="px-2 py-2 space-y-1.5 border-t border-border/60">
+      <label className="flex items-center justify-between gap-2 text-[10px]">
+        <span className="text-muted-foreground">{t('playback.topicTree.color')}</span>
+        <input
+          type="color"
+          value={config.color}
+          className="h-5 w-10 rounded border border-border bg-transparent"
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => setConfig((c) => ({ ...c, color: e.target.value }))}
+        />
+      </label>
+      <label className="flex items-center justify-between gap-2 text-[10px]">
+        <span className="text-muted-foreground">{t('playback.topicTree.pointSize')}</span>
+        <input
+          type="range"
+          min={0.01}
+          max={0.15}
+          step={0.01}
+          value={config.pointSize}
+          className="flex-1 max-w-[9rem]"
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) =>
+            setConfig((c) => ({ ...c, pointSize: parseFloat(e.target.value) }))
+          }
+        />
+      </label>
+    </div>
+  )
+}
+
 function TopicRow({ item }: { item: McapTopicInfo }) {
   const [selected, setSelected] = useAtom(selectedTopicAtom)
   const [visibility, setVisibility] = useAtom(topicVisibilityAtom)
@@ -192,16 +241,18 @@ function TopicRow({ item }: { item: McapTopicInfo }) {
   const visible = visibility[item.topic] === true
   const isSelected = selected === item.topic
   const isPointCloud = isLidarPointCloudTopic(item.topic, item.schemaName)
+  const isLaserScan = isLaserScanTopic(item.topic, item.schemaName)
   const isCameraInfo = isCameraInfoTopic(item.topic, item.schemaName)
-  const canExpand = isPointCloud || isCameraInfo
+  const canExpand = isPointCloud || isCameraInfo || isLaserScan
   const showSettings = canExpand && expanded
+  const TopicIcon = getTopicTypeIcon(item.topic, item.schemaName)
 
   return (
     <div
       className={cn(
         'mx-1 mb-0.5 rounded-md overflow-hidden',
         isSelected && 'bg-selection-accent/20 ring-1 ring-selection-accent/40',
-        visible && (isPointCloud || isCameraInfo) && 'bg-primary/5',
+        visible && (isPointCloud || isCameraInfo || isLaserScan) && 'bg-primary/5',
       )}
     >
       <div
@@ -233,7 +284,7 @@ function TopicRow({ item }: { item: McapTopicInfo }) {
         ) : (
           <span className="w-4 flex-shrink-0" />
         )}
-        <Radio className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
+        <TopicIcon className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
         <div className="flex-1 min-w-0">
           <div className="truncate font-mono text-xs">{item.topic}</div>
           <div className="truncate text-[10px] font-mono text-muted-foreground">
@@ -263,6 +314,7 @@ function TopicRow({ item }: { item: McapTopicInfo }) {
         </button>
       </div>
       {showSettings && isPointCloud && <PointCloudInlineSettings topic={item.topic} />}
+      {showSettings && isLaserScan && <LaserScanInlineSettings topic={item.topic} />}
       {showSettings && isCameraInfo && <CameraInfoInlineSettings topic={item.topic} />}
     </div>
   )

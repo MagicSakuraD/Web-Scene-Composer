@@ -5,10 +5,11 @@ import {
   encodeTwist,
   decodeOdometry,
   decodeTfMessage,
-  parseCompressedImageMessage,
   decodePointCloud2,
+  decodeLaserScan,
   isCameraImageTopic,
   isLidarPointCloudTopic,
+  isLaserScanTopic,
   preferCompressedCameraTopics,
   encodeNavigateToPoseRequest,
   encodeEmptyServiceRequest,
@@ -20,9 +21,13 @@ import {
   decodeBehaviorTreeLog,
   type CmdVel,
   type DecodedCameraFrame,
+  type DecodedLaserScan,
   type DecodedPointCloud,
   type RosPoseStamped,
 } from '@/lib/foxglove/ros-serialization'
+import { decodeRosCameraInfo } from '@/lib/ros/decode-camera-info'
+import type { DecodedCameraInfo } from '@/lib/ros/camera-info-store'
+import { isCameraInfoTopic } from '@/lib/ros/resolve-camera-topics'
 import {
   releaseAllH264Decoders,
   releaseH264Decoder,
@@ -58,6 +63,8 @@ type LogFn = (entry: Omit<SimulateLogEntry, 'id' | 'time'>) => void
 type OdomFn = (pose: ReturnType<typeof decodeOdometry>) => void
 type ImageFrameFn = (topic: string, frame: DecodedCameraFrame) => void
 type PointCloudFn = (topic: string, cloud: DecodedPointCloud) => void
+type LaserScanFn = (topic: string, scan: DecodedLaserScan) => void
+type CameraInfoFn = (topic: string, info: DecodedCameraInfo) => void
 type TopicsListener = () => void
 
 const EMPTY_CAMERA_TOPICS: readonly string[] = []
@@ -81,6 +88,22 @@ interface PointCloudSubscription {
   subscriptionId: SubscriptionId | null
   schemaName: string
   callbacks: Set<PointCloudFn>
+}
+
+interface LaserScanSubscription {
+  topic: string
+  channelId: number | null
+  subscriptionId: SubscriptionId | null
+  schemaName: string
+  callbacks: Set<LaserScanFn>
+}
+
+interface CameraInfoSubscription {
+  topic: string
+  channelId: number | null
+  subscriptionId: SubscriptionId | null
+  schemaName: string
+  callbacks: Set<CameraInfoFn>
 }
 
 const IMAGE_UI_MAX_FPS = 30
@@ -128,6 +151,8 @@ class FoxgloveBridgeManager {
   private cachedLidarTopics: readonly string[] = EMPTY_LIDAR_TOPICS
   private imageSubs = new Map<string, ImageSubscription>()
   private pointCloudSubs = new Map<string, PointCloudSubscription>()
+  private laserScanSubs = new Map<string, LaserScanSubscription>()
+  private cameraInfoSubs = new Map<string, CameraInfoSubscription>()
   private topicListeners = new Set<TopicsListener>()
   /** Fired on any channel advertise/unadvertise (full topic list for Topics panel) */
   private channelListeners = new Set<TopicsListener>()
@@ -222,6 +247,8 @@ class FoxgloveBridgeManager {
           this.syncTfSubscription(client)
           this.syncImageSubscriptions(client)
           this.syncPointCloudSubscriptions(client)
+          this.syncLaserScanSubscriptions(client)
+          this.syncCameraInfoSubscriptions(client)
           if (this.navGoalActive) {
             this.syncNavGoalSubscriptions(client)
             this.syncNavPathSubscriptions(client)
@@ -338,6 +365,18 @@ class FoxgloveBridgeManager {
           for (const sub of this.pointCloudSubs.values()) {
             if (sub.subscriptionId !== event.subscriptionId) continue
             this.handlePointCloudMessage(sub, event.data)
+            return
+          }
+
+          for (const sub of this.laserScanSubs.values()) {
+            if (sub.subscriptionId !== event.subscriptionId) continue
+            this.handleLaserScanMessage(sub, event.data)
+            return
+          }
+
+          for (const sub of this.cameraInfoSubs.values()) {
+            if (sub.subscriptionId !== event.subscriptionId) continue
+            this.handleCameraInfoMessage(sub, event.data)
             return
           }
 
@@ -466,12 +505,8 @@ class FoxgloveBridgeManager {
     sub.lastFrameAt = now
 
     const bytes = toUint8Array(data)
-
-    const msg = parseCompressedImageMessage(bytes)
-    if (!msg || msg.data.length === 0) return
-
-    const { decodeCompressedImageMessage } = await import('@/lib/ros/image-decoder')
-    const frame = await decodeCompressedImageMessage(sub.topic, msg)
+    const { decodeImagePayload } = await import('@/lib/ros/image-decoder')
+    const frame = await decodeImagePayload(sub.topic, sub.schemaName, bytes)
     if (!frame) return
 
     for (const cb of sub.callbacks) {
@@ -496,6 +531,64 @@ class FoxgloveBridgeManager {
       sub.schemaName = channel.schemaName
       sub.subscriptionId = client.subscribe(channel.id)
       this.log({ level: 'info', message: `雷达已订阅 ${sub.topic}` })
+    }
+  }
+
+  private syncLaserScanSubscriptions(client: FoxgloveClient) {
+    for (const sub of this.laserScanSubs.values()) {
+      if (sub.callbacks.size === 0) continue
+      const channel = this.channels.find((c) => c.topic === sub.topic)
+      if (!channel) continue
+      if (!isLaserScanTopic(channel.topic, channel.schemaName)) {
+        this.log({
+          level: 'warn',
+          message: `跳过非 LaserScan 话题: ${channel.topic} (${channel.schemaName})`,
+        })
+        continue
+      }
+      if (sub.subscriptionId != null) continue
+      sub.channelId = channel.id
+      sub.schemaName = channel.schemaName
+      sub.subscriptionId = client.subscribe(channel.id)
+      this.log({ level: 'info', message: `LaserScan 已订阅 ${sub.topic}` })
+    }
+  }
+
+  private handleLaserScanMessage(sub: LaserScanSubscription, data: ArrayBuffer | ArrayBufferView) {
+    const bytes = toUint8Array(data)
+    const scan = decodeLaserScan(bytes)
+    if (!scan) return
+    for (const cb of sub.callbacks) {
+      cb(sub.topic, scan)
+    }
+  }
+
+  private syncCameraInfoSubscriptions(client: FoxgloveClient) {
+    for (const sub of this.cameraInfoSubs.values()) {
+      if (sub.callbacks.size === 0) continue
+      const channel = this.channels.find((c) => c.topic === sub.topic)
+      if (!channel) continue
+      if (!isCameraInfoTopic(channel.topic, channel.schemaName)) {
+        this.log({
+          level: 'warn',
+          message: `跳过非 CameraInfo 话题: ${channel.topic} (${channel.schemaName})`,
+        })
+        continue
+      }
+      if (sub.subscriptionId != null) continue
+      sub.channelId = channel.id
+      sub.schemaName = channel.schemaName
+      sub.subscriptionId = client.subscribe(channel.id)
+      this.log({ level: 'info', message: `CameraInfo 已订阅 ${sub.topic}` })
+    }
+  }
+
+  private handleCameraInfoMessage(sub: CameraInfoSubscription, data: ArrayBuffer | ArrayBufferView) {
+    const bytes = toUint8Array(data)
+    const info = decodeRosCameraInfo(sub.topic, bytes)
+    if (!info) return
+    for (const cb of sub.callbacks) {
+      cb(sub.topic, info)
     }
   }
 
@@ -582,6 +675,96 @@ class FoxgloveBridgeManager {
           this.client.unsubscribe(current.subscriptionId)
         }
         this.pointCloudSubs.delete(topic)
+      }
+    }
+  }
+
+  subscribeLaserScan(topic: string, callback: LaserScanFn): () => void {
+    let sub = this.laserScanSubs.get(topic)
+    if (!sub) {
+      sub = {
+        topic,
+        channelId: null,
+        subscriptionId: null,
+        schemaName: 'sensor_msgs/msg/LaserScan',
+        callbacks: new Set(),
+      }
+      this.laserScanSubs.set(topic, sub)
+    }
+
+    sub.callbacks.add(callback)
+
+    if (this.client) {
+      const channel = this.channels.find((c) => c.topic === topic)
+      if (channel && sub.subscriptionId == null) {
+        if (!isLaserScanTopic(channel.topic, channel.schemaName)) {
+          this.log({
+            level: 'warn',
+            message: `跳过非 LaserScan 话题: ${topic} (${channel.schemaName})`,
+          })
+        } else {
+          sub.channelId = channel.id
+          sub.schemaName = channel.schemaName
+          sub.subscriptionId = this.client.subscribe(channel.id)
+          this.log({ level: 'info', message: `LaserScan 已订阅 ${topic}` })
+        }
+      }
+    }
+
+    return () => {
+      const current = this.laserScanSubs.get(topic)
+      if (!current) return
+      current.callbacks.delete(callback)
+      if (current.callbacks.size === 0) {
+        if (this.client && current.subscriptionId != null) {
+          this.client.unsubscribe(current.subscriptionId)
+        }
+        this.laserScanSubs.delete(topic)
+      }
+    }
+  }
+
+  subscribeCameraInfo(topic: string, callback: CameraInfoFn): () => void {
+    let sub = this.cameraInfoSubs.get(topic)
+    if (!sub) {
+      sub = {
+        topic,
+        channelId: null,
+        subscriptionId: null,
+        schemaName: 'sensor_msgs/msg/CameraInfo',
+        callbacks: new Set(),
+      }
+      this.cameraInfoSubs.set(topic, sub)
+    }
+
+    sub.callbacks.add(callback)
+
+    if (this.client) {
+      const channel = this.channels.find((c) => c.topic === topic)
+      if (channel && sub.subscriptionId == null) {
+        if (!isCameraInfoTopic(channel.topic, channel.schemaName)) {
+          this.log({
+            level: 'warn',
+            message: `跳过非 CameraInfo 话题: ${topic} (${channel.schemaName})`,
+          })
+        } else {
+          sub.channelId = channel.id
+          sub.schemaName = channel.schemaName
+          sub.subscriptionId = this.client.subscribe(channel.id)
+          this.log({ level: 'info', message: `CameraInfo 已订阅 ${topic}` })
+        }
+      }
+    }
+
+    return () => {
+      const current = this.cameraInfoSubs.get(topic)
+      if (!current) return
+      current.callbacks.delete(callback)
+      if (current.callbacks.size === 0) {
+        if (this.client && current.subscriptionId != null) {
+          this.client.unsubscribe(current.subscriptionId)
+        }
+        this.cameraInfoSubs.delete(topic)
       }
     }
   }
@@ -739,6 +922,14 @@ class FoxgloveBridgeManager {
       sub.subscriptionId = null
     }
     for (const sub of this.pointCloudSubs.values()) {
+      sub.channelId = null
+      sub.subscriptionId = null
+    }
+    for (const sub of this.laserScanSubs.values()) {
+      sub.channelId = null
+      sub.subscriptionId = null
+    }
+    for (const sub of this.cameraInfoSubs.values()) {
       sub.channelId = null
       sub.subscriptionId = null
     }
@@ -1030,6 +1221,16 @@ class FoxgloveBridgeManager {
         }
       }
       for (const sub of this.pointCloudSubs.values()) {
+        if (sub.subscriptionId != null) {
+          this.client.unsubscribe(sub.subscriptionId)
+        }
+      }
+      for (const sub of this.laserScanSubs.values()) {
+        if (sub.subscriptionId != null) {
+          this.client.unsubscribe(sub.subscriptionId)
+        }
+      }
+      for (const sub of this.cameraInfoSubs.values()) {
         if (sub.subscriptionId != null) {
           this.client.unsubscribe(sub.subscriptionId)
         }

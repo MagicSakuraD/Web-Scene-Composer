@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { Camera, Circle, Plus, X } from 'lucide-react'
 import {
   Group as PanelGroup,
@@ -26,7 +26,6 @@ import {
   preferCompressedCameraTopics,
   resolvePreferredCameraTopic,
 } from '@/lib/foxglove/ros-serialization'
-import { useCameraViewer } from '@/hooks/use-camera-viewer'
 import { cn } from '@/lib/utils'
 
 const EMPTY_TOPICS: readonly string[] = []
@@ -74,7 +73,6 @@ function CameraTile({
     () => undefined as CameraFrameSnapshot | undefined,
   )
 
-  // 挂载 canvas → store 同步绘制（支持左右双路同时显示）
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -99,7 +97,7 @@ function CameraTile({
         <button
           type="button"
           className="p-0.5 rounded hover:bg-accent text-muted-foreground shrink-0"
-          title="移除此画面"
+          title="关闭 Topics 中该图像话题（停止订阅）"
           onClick={onRemove}
         >
           <X className="h-3 w-3" />
@@ -116,7 +114,7 @@ function CameraTile({
         />
         {!frame?.hasImage && (
           <p className="text-xs text-muted-foreground px-4 text-center">
-            等待 H.264 帧…（需 Chromium / Edge WebCodecs）
+            等待图像帧…
           </p>
         )}
       </div>
@@ -138,21 +136,17 @@ function CameraTile({
 function CameraPanelGrid({
   topics,
   onRemove,
-  isReplay,
 }: {
   topics: string[]
   onRemove: (topic: string) => void
-  isReplay?: boolean
 }) {
   if (topics.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground p-6">
         <Camera className="h-10 w-10 opacity-40" />
-        <p className="text-sm">尚未添加摄像头话题</p>
+        <p className="text-sm">尚未启用图像话题</p>
         <p className="text-xs text-center max-w-sm">
-          {isReplay
-            ? '在左侧 Topics 树中点击图像话题旁的眼睛图标以启用。'
-            : `在上方选择压缩话题（如 ${DEFAULT_CAMERA_COMPRESSED_TOPICS[0]}），点击添加。`}
+          在左侧 Topics 树中点击图像话题旁的眼睛，或使用上方快捷添加（等同打开眼睛）。
         </p>
       </div>
     )
@@ -184,77 +178,84 @@ function CameraPanelGrid({
   )
 }
 
+/**
+ * 预览面板：列表 = Topics 眼睛已打开的图像话题（cameraViewerTopicsAtom）。
+ * 添加/移除只改 topicVisibility，订阅由 PlaybackRuntime 统一处理。
+ */
 export function CameraViewerPanel() {
-  const [selectedTopics, setSelectedTopics] = useAtom(cameraViewerTopicsAtom)
+  const previewTopics = useAtomValue(cameraViewerTopicsAtom)
   const [topicInput, setTopicInput] = useState('')
   const dataSourceActive = useAtomValue(dataSourceActiveAtom)
   const dataSourceMode = useAtomValue(dataSourceModeAtom)
   const setTopicVisibility = useSetAtom(topicVisibilityAtom)
   const availableTopics = useAvailableCameraTopics()
   const simActive = dataSourceActive
-  const isReplay = dataSourceMode === 'replay'
-
-  useCameraViewer(selectedTopics, true)
 
   const suggestions = useMemo(() => {
     const q = topicInput.trim().toLowerCase()
-    const pool = availableTopics.length > 0 ? availableTopics : selectedTopics
+    const pool = availableTopics.length > 0 ? availableTopics : previewTopics
     if (!q) return pool
     return pool.filter((t) => t.toLowerCase().includes(q))
-  }, [availableTopics, selectedTopics, topicInput])
+  }, [availableTopics, previewTopics, topicInput])
 
-  const addTopic = useCallback(
+  /** 启用图像话题 = 打开 Topics 眼睛 */
+  const enableTopic = useCallback(
     (raw?: string) => {
       const resolved = resolvePreferredCameraTopic(raw ?? topicInput, availableTopics)
       if (!resolved) return
-      if (isReplay) {
-        setTopicVisibility((prev) => ({ ...prev, [resolved]: true }))
-        setTopicInput('')
-        return
-      }
-      if (selectedTopics.includes(resolved)) {
-        setTopicInput('')
-        return
-      }
-      setSelectedTopics([...selectedTopics, resolved])
+      setTopicVisibility((prev) => {
+        if (prev[resolved] === true) return prev
+        return { ...prev, [resolved]: true }
+      })
       setTopicInput('')
     },
-    [
-      availableTopics,
-      isReplay,
-      selectedTopics,
-      setSelectedTopics,
-      setTopicVisibility,
-      topicInput,
-    ],
+    [availableTopics, setTopicVisibility, topicInput],
   )
 
-  /** 已选 raw 话题在 Bridge 有 compressed 时自动升级 */
+  /** raw → compressed：关旧眼睛、开新眼睛 */
   useEffect(() => {
-    if (isReplay) return
-    if (availableTopics.length === 0 || selectedTopics.length === 0) return
-    const upgraded = selectedTopics.map((t) => resolvePreferredCameraTopic(t, availableTopics))
-    const changed = upgraded.some((t, i) => t !== selectedTopics[i])
-    if (!changed) return
+    if (!simActive || availableTopics.length === 0 || previewTopics.length === 0) return
 
-    for (const old of selectedTopics) {
-      if (!upgraded.includes(old)) cameraFrameStore.clearTopic(old)
+    const upgrades: Array<{ from: string; to: string }> = []
+    for (const t of previewTopics) {
+      const preferred = resolvePreferredCameraTopic(t, availableTopics)
+      if (preferred !== t) upgrades.push({ from: t, to: preferred })
     }
-    setSelectedTopics(upgraded)
-  }, [availableTopics, isReplay, selectedTopics, setSelectedTopics])
+    if (upgrades.length === 0) return
 
-  const removeTopic = useCallback(
-    (topic: string) => {
-      if (isReplay) {
-        setTopicVisibility((prev) => ({ ...prev, [topic]: false }))
-        cameraFrameStore.clearTopic(topic)
-        return
+    setTopicVisibility((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const { from, to } of upgrades) {
+        if (next[from]) {
+          next[from] = false
+          changed = true
+        }
+        if (next[to] !== true) {
+          next[to] = true
+          changed = true
+        }
       }
-      setSelectedTopics(selectedTopics.filter((t) => t !== topic))
+      return changed ? next : prev
+    })
+  }, [availableTopics, previewTopics, setTopicVisibility, simActive])
+
+  /** 关闭眼睛 = 停止订阅与预览 */
+  const disableTopic = useCallback(
+    (topic: string) => {
+      setTopicVisibility((prev) => ({ ...prev, [topic]: false }))
       cameraFrameStore.clearTopic(topic)
     },
-    [isReplay, selectedTopics, setSelectedTopics, setTopicVisibility],
+    [setTopicVisibility],
   )
+
+  const statusText = !simActive
+    ? dataSourceMode === 'live' || dataSourceMode === 'idle'
+      ? `请先点击标题栏 Simulate 连接 Foxglove Bridge (${FOXGLOVE_WS_URL})`
+      : '请打开 .mcap 或连接 Bridge'
+    : previewTopics.length > 0
+      ? `已启用 ${previewTopics.length} 路图像 · 共 ${availableTopics.length} 个图像话题`
+      : `未启用图像话题 — 在 Topics 点眼睛，或下方快捷添加（共 ${availableTopics.length} 个）`
 
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -264,9 +265,7 @@ export function CameraViewerPanel() {
           <div>
             <h3 className="text-sm font-medium">摄像头画面</h3>
             <p className="text-[10px] text-muted-foreground">
-              {isReplay
-                ? '在左侧 Topics 点眼睛启用图像话题'
-                : 'sensor_msgs/CompressedImage (H.264) · WebCodecs 解码'}
+              Topics 眼睛为总开关 · 本面板仅预览已启用话题
             </p>
           </div>
         </div>
@@ -274,7 +273,7 @@ export function CameraViewerPanel() {
         <div
           className={cn(
             'rounded-md border px-3 py-2 text-xs flex items-center gap-2',
-            simActive && selectedTopics.length > 0
+            simActive && previewTopics.length > 0
               ? 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400'
               : simActive
                 ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400'
@@ -284,23 +283,17 @@ export function CameraViewerPanel() {
           <Circle
             className={cn(
               'h-2 w-2 fill-current',
-              simActive && selectedTopics.length > 0
+              simActive && previewTopics.length > 0
                 ? 'text-green-500'
                 : simActive
                   ? 'text-amber-500'
                   : 'text-muted-foreground',
             )}
           />
-          {isReplay
-            ? selectedTopics.length > 0
-              ? `已启用 ${selectedTopics.length} 路图像 · 共 ${availableTopics.length} 个图像话题`
-              : `未启用图像话题 — 在 Topics 树中点击眼睛（共 ${availableTopics.length} 个）`
-            : simActive
-              ? `Foxglove 已连接 · 发现 ${availableTopics.length} 个图像话题`
-              : `请先点击标题栏 Simulate 连接 Foxglove Bridge (${FOXGLOVE_WS_URL})`}
+          {statusText}
         </div>
 
-        {!isReplay && (
+        {simActive && (
           <>
             <div className="flex gap-2">
               <div className="flex-1 relative">
@@ -308,11 +301,11 @@ export function CameraViewerPanel() {
                   type="text"
                   list="camera-topic-suggestions"
                   value={topicInput}
-                  placeholder="/front_stereo_camera/left/image_raw/compressed"
+                  placeholder="/front_stereo_camera/left/image_raw"
                   className="w-full bg-input border border-border rounded px-2 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
                   onChange={(e) => setTopicInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') addTopic()
+                    if (e.key === 'Enter') enableTopic()
                   }}
                 />
                 <datalist id="camera-topic-suggestions">
@@ -324,10 +317,10 @@ export function CameraViewerPanel() {
               <button
                 type="button"
                 className="flex items-center gap-1 px-3 py-1.5 rounded bg-primary text-primary-foreground text-xs hover:opacity-90 shrink-0"
-                onClick={() => addTopic()}
+                onClick={() => enableTopic()}
               >
                 <Plus className="h-3.5 w-3.5" />
-                添加
+                启用
               </button>
             </div>
 
@@ -338,7 +331,7 @@ export function CameraViewerPanel() {
                     key={t}
                     type="button"
                     className="text-[10px] font-mono px-2 py-0.5 rounded border border-border hover:bg-accent truncate max-w-full"
-                    onClick={() => addTopic(t)}
+                    onClick={() => enableTopic(t)}
                   >
                     {t}
                   </button>
@@ -346,31 +339,33 @@ export function CameraViewerPanel() {
               </div>
             )}
 
-            {availableTopics.length > 0 && selectedTopics.length === 0 && (
+            {availableTopics.length > 0 && previewTopics.length === 0 && (
               <div className="flex flex-wrap gap-1">
                 <span className="text-[10px] text-muted-foreground w-full mb-0.5">
-                  快捷添加（H.264 compressed）：
+                  快捷启用：
                 </span>
                 {(availableTopics.length > 0
                   ? availableTopics
                   : DEFAULT_CAMERA_COMPRESSED_TOPICS
-                ).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    className="text-[10px] font-mono px-2 py-0.5 rounded border border-primary/30 text-primary hover:bg-primary/10"
-                    onClick={() => addTopic(t)}
-                  >
-                    {t}
-                  </button>
-                ))}
+                )
+                  .slice(0, 8)
+                  .map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className="text-[10px] font-mono px-2 py-0.5 rounded border border-primary/30 text-primary hover:bg-primary/10"
+                      onClick={() => enableTopic(t)}
+                    >
+                      {t}
+                    </button>
+                  ))}
               </div>
             )}
           </>
         )}
       </div>
 
-      <CameraPanelGrid topics={selectedTopics} onRemove={removeTopic} isReplay={isReplay} />
+      <CameraPanelGrid topics={previewTopics} onRemove={disableTopic} />
     </div>
   )
 }

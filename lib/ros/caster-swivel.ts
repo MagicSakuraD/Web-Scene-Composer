@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { isCasterSwivelFrameId, sideFromRobotPartName } from '@/lib/ros/tf-config'
 import { invalidateWheelSpinState } from '@/lib/ros/wheel-spin'
 
 /**
@@ -170,14 +171,15 @@ const _localDir = new THREE.Vector3()
 const _forkDir = new THREE.Vector3()
 
 export function isCasterSwivelName(name: string): boolean {
-  return /^caster_swivel_(left|right)$/i.test(name)
+  return isCasterSwivelFrameId(name)
 }
 
 function sideFromSwivelName(name: string): 'left' | 'right' | null {
-  const lower = name.toLowerCase()
-  if (lower.endsWith('_left')) return 'left'
-  if (lower.endsWith('_right')) return 'right'
-  return null
+  return sideFromRobotPartName(name)
+}
+
+function casterWheelNameCandidates(side: 'left' | 'right'): string[] {
+  return [`caster_wheel_${side}`, `${side}_caster`]
 }
 
 function shortestAngleDiff(from: number, to: number): number {
@@ -228,12 +230,17 @@ function getSwivelState(swivel: THREE.Object3D): CasterSwivelState {
 }
 
 /**
- * odom 绑定目标可能是 asset-ref / chassis_link；动画节点统一在 Nova_Carter_ROS 子树里。
+ * odom 绑定目标可能是 asset-ref / chassis；动画节点优先 *_ROS 子树（Nova_Carter_ROS / lw_hub_ROS）。
  */
 export function resolveRobotAnimRoot(target: THREE.Object3D): THREE.Object3D {
-  if (/^Nova_Carter_ROS$/i.test(target.name)) return target
-  const nova = target.getObjectByName('Nova_Carter_ROS')
-  return nova ?? target
+  if (/_ROS$/i.test(target.name)) return target
+
+  let rosRoot: THREE.Object3D | null = null
+  target.traverse((obj) => {
+    if (rosRoot || !obj.name) return
+    if (/_ROS$/i.test(obj.name)) rosRoot = obj
+  })
+  return rosRoot ?? target
 }
 
 /**
@@ -253,7 +260,11 @@ export function bindCasterWheelsToSwivels(
     const side = sideFromSwivelName(swivel.name)
     if (!side) continue
 
-    const wheel = casterWheels.find((w) => w.name.toLowerCase() === `caster_wheel_${side}`)
+    const candidates = casterWheelNameCandidates(side)
+    const wheel = casterWheels.find((w) => {
+      const n = w.name.toLowerCase()
+      return candidates.some((c) => c === n)
+    })
     if (!wheel) continue
 
     if (wheel.parent === swivel) {
@@ -277,9 +288,11 @@ export function areCasterWheelsBound(swivels: THREE.Object3D[]): boolean {
   return swivels.every((swivel) => {
     const side = sideFromSwivelName(swivel.name)
     if (!side) return false
-    const wheel = swivel.children.find(
-      (c) => c.name.toLowerCase() === `caster_wheel_${side}`,
-    )
+    const candidates = casterWheelNameCandidates(side)
+    const wheel = swivel.children.find((c) => {
+      const n = c.name.toLowerCase()
+      return candidates.some((cand) => cand === n)
+    })
     return !!wheel
   })
 }

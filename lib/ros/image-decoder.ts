@@ -45,47 +45,97 @@ function decodeRawRosImage(
   if (width <= 0 || height <= 0 || data.length === 0) return Promise.resolve(null)
 
   const enc = encoding.toLowerCase()
+  const step = Math.max(Number(msg.step) || 0, width)
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
-  const ctx = canvas.getContext('2d')
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) return Promise.resolve(null)
 
   const imageData = ctx.createImageData(width, height)
+  const out = imageData.data
 
   if (enc === 'rgb8') {
-    if (data.length < width * height * 3) return Promise.resolve(null)
-    for (let i = 0, j = 0; i < width * height; i++, j += 3) {
-      const o = i * 4
-      imageData.data[o] = data[j]!
-      imageData.data[o + 1] = data[j + 1]!
-      imageData.data[o + 2] = data[j + 2]!
-      imageData.data[o + 3] = 255
+    const need = step * (height - 1) + width * 3
+    if (data.length < need) return Promise.resolve(null)
+    for (let y = 0; y < height; y++) {
+      const row = y * step
+      for (let x = 0; x < width; x++) {
+        const j = row + x * 3
+        const o = (y * width + x) * 4
+        out[o] = data[j]!
+        out[o + 1] = data[j + 1]!
+        out[o + 2] = data[j + 2]!
+        out[o + 3] = 255
+      }
     }
   } else if (enc === 'bgr8') {
-    if (data.length < width * height * 3) return Promise.resolve(null)
-    for (let i = 0, j = 0; i < width * height; i++, j += 3) {
-      const o = i * 4
-      imageData.data[o] = data[j + 2]!
-      imageData.data[o + 1] = data[j + 1]!
-      imageData.data[o + 2] = data[j]!
-      imageData.data[o + 3] = 255
+    const need = step * (height - 1) + width * 3
+    if (data.length < need) return Promise.resolve(null)
+    for (let y = 0; y < height; y++) {
+      const row = y * step
+      for (let x = 0; x < width; x++) {
+        const j = row + x * 3
+        const o = (y * width + x) * 4
+        out[o] = data[j + 2]!
+        out[o + 1] = data[j + 1]!
+        out[o + 2] = data[j]!
+        out[o + 3] = 255
+      }
     }
   } else if (enc === 'mono8') {
-    if (data.length < width * height) return Promise.resolve(null)
-    for (let i = 0; i < width * height; i++) {
-      const v = data[i]!
-      const o = i * 4
-      imageData.data[o] = v
-      imageData.data[o + 1] = v
-      imageData.data[o + 2] = v
-      imageData.data[o + 3] = 255
+    const need = step * (height - 1) + width
+    if (data.length < need) return Promise.resolve(null)
+    for (let y = 0; y < height; y++) {
+      const row = y * step
+      for (let x = 0; x < width; x++) {
+        const v = data[row + x]!
+        const o = (y * width + x) * 4
+        out[o] = v
+        out[o + 1] = v
+        out[o + 2] = v
+        out[o + 3] = 255
+      }
+    }
+  } else if (enc === 'rgba8') {
+    const need = step * (height - 1) + width * 4
+    if (data.length < need) return Promise.resolve(null)
+    for (let y = 0; y < height; y++) {
+      const row = y * step
+      for (let x = 0; x < width; x++) {
+        const j = row + x * 4
+        const o = (y * width + x) * 4
+        out[o] = data[j]!
+        out[o + 1] = data[j + 1]!
+        out[o + 2] = data[j + 2]!
+        out[o + 3] = data[j + 3]!
+      }
     }
   } else {
     return Promise.resolve(null)
   }
 
   ctx.putImageData(imageData, 0, 0)
+
+  // Frustum / preview: downscale huge Isaac frames so UI stays responsive
+  const maxEdge = 960
+  if (width > maxEdge || height > maxEdge) {
+    const scale = maxEdge / Math.max(width, height)
+    const dw = Math.max(1, Math.round(width * scale))
+    const dh = Math.max(1, Math.round(height * scale))
+    const small = document.createElement('canvas')
+    small.width = dw
+    small.height = dh
+    const sctx = small.getContext('2d')
+    if (!sctx) return Promise.resolve(null)
+    sctx.drawImage(canvas, 0, 0, dw, dh)
+    return createImageBitmap(small).then((bitmap) => ({
+      bitmap,
+      width: dw,
+      height: dh,
+    }))
+  }
+
   return createImageBitmap(canvas).then((bitmap) => ({ bitmap, width, height }))
 }
 

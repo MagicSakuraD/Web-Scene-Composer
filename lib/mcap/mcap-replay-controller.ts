@@ -3,6 +3,7 @@ import {
   decodeOdometry,
   decodeTfMessage,
   type DecodedCameraFrame,
+  type DecodedLaserScan,
   type DecodedPointCloud,
   type DecodedTfTransform,
   type OdomMessage,
@@ -23,6 +24,7 @@ import { isCameraInfoSchema } from '@/lib/ros/decode-camera-info'
 
 type ImageFrameFn = (topic: string, frame: DecodedCameraFrame) => void
 type PointCloudFn = (topic: string, cloud: DecodedPointCloud) => void
+type LaserScanFn = (topic: string, scan: DecodedLaserScan) => void
 type SceneUpdateFn = (topic: string, update: DecodedSceneUpdate) => void
 type CameraInfoFn = (topic: string, info: DecodedCameraInfo) => void
 type OdomFn = (pose: OdomMessage) => void
@@ -54,6 +56,7 @@ class McapReplayController {
   private lastFlushTimeNs = BigInt(0)
   private imageSubs = new Map<string, Set<ImageFrameFn>>()
   private pointCloudSubs = new Map<string, Set<PointCloudFn>>()
+  private laserScanSubs = new Map<string, Set<LaserScanFn>>()
   private sceneUpdateSubs = new Map<string, Set<SceneUpdateFn>>()
   private cameraInfoSubs = new Map<string, Set<CameraInfoFn>>()
   private onOdom: OdomFn | null = null
@@ -147,6 +150,23 @@ class McapReplayController {
     }
   }
 
+  subscribeLaserScan(topic: string, callback: LaserScanFn): () => void {
+    let set = this.laserScanSubs.get(topic)
+    const isNewTopic = !set
+    if (!set) {
+      set = new Set()
+      this.laserScanSubs.set(topic, set)
+    }
+    set.add(callback)
+    if (isNewTopic) this.reflushAfterSubscribe()
+    return () => {
+      const current = this.laserScanSubs.get(topic)
+      if (!current) return
+      current.delete(callback)
+      if (current.size === 0) this.laserScanSubs.delete(topic)
+    }
+  }
+
   subscribeSceneUpdate(topic: string, callback: SceneUpdateFn): () => void {
     let set = this.sceneUpdateSubs.get(topic)
     const isNewTopic = !set
@@ -198,6 +218,7 @@ class McapReplayController {
     if (
       this.imageSubs.has(topic) ||
       this.pointCloudSubs.has(topic) ||
+      this.laserScanSubs.has(topic) ||
       this.sceneUpdateSubs.has(topic) ||
       this.cameraInfoSubs.has(topic)
     ) {
@@ -223,6 +244,7 @@ class McapReplayController {
     }
     return (
       schemaName.includes('PointCloud2') ||
+      schemaName.includes('LaserScan') ||
       schemaName.includes('CompressedImage') ||
       schemaName.includes('CameraInfo') ||
       schemaName.includes('/Image')
@@ -316,6 +338,9 @@ class McapReplayController {
       },
       onPointCloud: (topic: string, cloud: DecodedPointCloud) => {
         for (const cb of this.pointCloudSubs.get(topic) ?? []) cb(topic, cloud)
+      },
+      onLaserScan: (topic: string, scan: DecodedLaserScan) => {
+        for (const cb of this.laserScanSubs.get(topic) ?? []) cb(topic, scan)
       },
       onSceneUpdate: (topic: string, update: DecodedSceneUpdate) => {
         for (const cb of this.sceneUpdateSubs.get(topic) ?? []) cb(topic, update)

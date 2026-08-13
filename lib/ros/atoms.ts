@@ -140,6 +140,45 @@ export const DEFAULT_CAMERA_FRUSTUM: CameraFrustumSettings = {
 /** topic (camera_info) → settings */
 export const cameraFrustumByTopicAtom = atom<Record<string, CameraFrustumSettings>>({})
 
+/** Foxglove-style TF axes / links in the 3D viewport */
+export interface TfDisplayConfig {
+  /** master switch for 3D axes + parent links */
+  enabled: boolean
+  showAxes: boolean
+  showLinks: boolean
+  axisLength: number
+  /** empty → auto (playback cloud frame or base_link) */
+  fixedFrame: string
+  selectedFrame: string | null
+  /** frame id → hidden (missing = visible) */
+  hiddenFrames: Record<string, boolean>
+}
+
+export const DEFAULT_TF_DISPLAY: TfDisplayConfig = {
+  enabled: true,
+  showAxes: true,
+  showLinks: true,
+  axisLength: 0.25,
+  fixedFrame: '',
+  selectedFrame: null,
+  hiddenFrames: {},
+}
+
+export const tfDisplayAtom = atom<TfDisplayConfig>(DEFAULT_TF_DISPLAY)
+
+export interface LaserScanDisplayConfig {
+  /** 可同时显示多个 LaserScan 话题 */
+  topics: string[]
+  color: string
+  pointSize: number
+}
+
+export const laserScanDisplayAtom = atom<LaserScanDisplayConfig>({
+  topics: [],
+  color: '#ff8c42',
+  pointSize: 0.04,
+})
+
 export type NavGoalPhase = 'idle' | 'sending' | 'navigating' | 'succeeded' | 'canceled' | 'aborted' | 'failed'
 
 export interface NavGoalState {

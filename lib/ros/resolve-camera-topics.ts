@@ -39,12 +39,14 @@ export function resolveImageTopicForInfo(
     .replace(/\/camera_info$/i, '')
     .replace(/\/CameraCalibration$/i, '')
   const candidates = [
+    `${prefix}/image_raw`,
     `${prefix}/image_rect_compressed`,
     `${prefix}/image_raw/compressed`,
     `${prefix}/image_compressed`,
     `${prefix}/compressed`,
-    `${prefix}/image_raw`,
     `${prefix}/image_rect`,
+    `${prefix}/image_color`,
+    `${prefix}/rgb/image_raw`,
     imageTopicFromCameraInfo(
       /\/camera_info$/i.test(infoTopic) ? infoTopic : `${prefix}/camera_info`,
     ),

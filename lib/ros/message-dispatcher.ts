@@ -1,11 +1,14 @@
 import {
   decodeOdometry,
   decodePointCloud2,
+  decodeLaserScan,
   decodeTfMessage,
   parseCompressedImageMessage,
   isLidarPointCloudTopic,
+  isLaserScanTopic,
   isCameraImageTopic,
   type DecodedCameraFrame,
+  type DecodedLaserScan,
   type DecodedPointCloud,
   type OdomMessage,
 } from '@/lib/foxglove/ros-serialization'
@@ -35,6 +38,7 @@ export interface DispatchHandlers {
   onOdom?: (pose: OdomMessage) => void
   onImage?: (topic: string, frame: DecodedCameraFrame) => void
   onPointCloud?: (topic: string, cloud: DecodedPointCloud) => void
+  onLaserScan?: (topic: string, scan: DecodedLaserScan) => void
   onSceneUpdate?: (topic: string, update: DecodedSceneUpdate) => void
   onCameraInfo?: (topic: string, info: DecodedCameraInfo) => void
 }
@@ -132,6 +136,12 @@ export async function dispatchMcapMessage({
   if (isLidarPointCloudTopic(topic, schemaName) || schemaName.includes('PointCloud2')) {
     const cloud = decodePointCloud2(data)
     if (cloud) handlers.onPointCloud?.(topic, cloud)
+    return
+  }
+
+  if (isLaserScanTopic(topic, schemaName) || schemaName.includes('LaserScan')) {
+    const scan = decodeLaserScan(data)
+    if (scan) handlers.onLaserScan?.(topic, scan)
     return
   }
 

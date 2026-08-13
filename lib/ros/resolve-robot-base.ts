@@ -3,9 +3,11 @@ import type { SceneNode } from '@/lib/scene/types'
 /** ROS base / chassis 常见命名，按优先级匹配 gltf-prim */
 const ROBOT_BASE_NAME_PATTERNS = [
   /^Nova_Carter_ROS$/i,
+  /^lw_hub_ROS$/i,
+  /_ROS$/i,
   /^chassis_link$/i,
   /^base_link$/i,
-  /_ROS$/i,
+  /^chassis$/i,
   /chassis/i,
   /base_link/i,
 ]

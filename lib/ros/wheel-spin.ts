@@ -23,11 +23,11 @@ export interface WheelSpinState {
 }
 
 export function isDriveWheelName(name: string): boolean {
-  return /^(wheel|drive_wheel)_(left|right)$/i.test(name)
+  return /^(wheel|drive_wheel)_(left|right)$/i.test(name) || /^(left|right)_wheel$/i.test(name)
 }
 
 export function isCasterWheelName(name: string): boolean {
-  return /^caster_wheel_(left|right)$/i.test(name)
+  return /^caster_wheel_(left|right)$/i.test(name) || /^(left|right)_caster$/i.test(name)
 }
 
 export function isWheelSpinName(name: string): boolean {
@@ -96,10 +96,12 @@ export function collectWheelSpinTargets(root: THREE.Object3D): WheelSpinTargets 
 
   root.traverse((obj) => {
     const name = obj.name?.toLowerCase() ?? ''
-    if (name === 'wheel_left') targets.driveLeft = obj
-    else if (name === 'wheel_right') targets.driveRight = obj
-    else if (name === 'caster_wheel_left') targets.casterLeft = obj
-    else if (name === 'caster_wheel_right') targets.casterRight = obj
+    if (name === 'wheel_left' || name === 'left_wheel') targets.driveLeft = obj
+    else if (name === 'wheel_right' || name === 'right_wheel') targets.driveRight = obj
+    else if (name === 'caster_wheel_left' || name === 'left_caster') targets.casterLeft = obj
+    else if (name === 'caster_wheel_right' || name === 'right_caster') {
+      targets.casterRight = obj
+    }
   })
 
   return targets

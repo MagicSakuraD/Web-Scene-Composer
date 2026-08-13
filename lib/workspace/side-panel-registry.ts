@@ -3,6 +3,7 @@ import type { SidePanelDefinition, SidePanelType } from './types'
 export const SIDE_PANEL_TYPES: SidePanelType[] = [
   'hierarchy',
   'topics',
+  'transforms',
   'inspector',
   'frame-inspector',
 ]
@@ -17,6 +18,11 @@ export const SIDE_PANEL_REGISTRY: Record<SidePanelType, SidePanelDefinition> = {
     type: 'topics',
     nameKey: 'sidePanel.topics.name',
     descriptionKey: 'sidePanel.topics.description',
+  },
+  transforms: {
+    type: 'transforms',
+    nameKey: 'sidePanel.transforms.name',
+    descriptionKey: 'sidePanel.transforms.description',
   },
   inspector: {
     type: 'inspector',

@@ -8,6 +8,7 @@ import {
   SlidersHorizontal,
   FileSearch,
   Search,
+  Move3d,
 } from 'lucide-react'
 import { useSetAtom } from 'jotai'
 import { setSidePanelAtom } from '@/lib/workspace/atoms'
@@ -22,6 +23,7 @@ import { cn } from '@/lib/utils'
 const PANEL_ICONS: Record<SidePanelType, typeof ListTree> = {
   hierarchy: ListTree,
   topics: Radio,
+  transforms: Move3d,
   inspector: SlidersHorizontal,
   'frame-inspector': FileSearch,
 }

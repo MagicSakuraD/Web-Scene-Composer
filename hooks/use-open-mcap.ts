@@ -23,11 +23,13 @@ import {
   cameraViewerTopicsAtom,
   cameraFrustumByTopicAtom,
   lidarDisplayAtom,
+  laserScanDisplayAtom,
   simulateStatusAtom,
 } from '@/lib/ros/atoms'
 import { cameraFrameStore } from '@/lib/ros/camera-frame-store'
 import { cameraInfoStore } from '@/lib/ros/camera-info-store'
 import { lidarPointStore } from '@/lib/ros/lidar-point-store'
+import { laserScanStore } from '@/lib/ros/laser-scan-store'
 import { sceneEntityStore } from '@/lib/ros/scene-entity-store'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
 import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
@@ -48,6 +50,7 @@ export function useOpenMcap() {
   const setLoading = useSetAtom(mcapLoadingAtom)
   const setCameraTopics = useSetAtom(cameraViewerTopicsAtom)
   const setLidarDisplay = useSetAtom(lidarDisplayAtom)
+  const setLaserScanDisplay = useSetAtom(laserScanDisplayAtom)
   const setCameraFrustum = useSetAtom(cameraFrustumByTopicAtom)
 
   const openFile = useCallback(
@@ -65,11 +68,13 @@ export function useOpenMcap() {
         cameraFrameStore.clearAll()
         cameraInfoStore.clearAll()
         lidarPointStore.clearAll()
+        laserScanStore.clearAll()
         sceneEntityStore.clearAll()
         runtimePoseStore.reset()
         tfRuntimeStore.reset()
         odomSceneCalibration.reset()
         setCameraFrustum({})
+        setLaserScanDisplay((prev) => ({ ...prev, topics: [] }))
 
         const { loadMcapFile } = await import('@/lib/mcap/mcap-loader')
         const result = await loadMcapFile(file)
@@ -114,6 +119,7 @@ export function useOpenMcap() {
       setError,
       setFileName,
       setLidarDisplay,
+      setLaserScanDisplay,
       setLoading,
       setPlaybackTime,
       setPlaying,
@@ -132,11 +138,13 @@ export function useOpenMcap() {
     cameraFrameStore.clearAll()
     cameraInfoStore.clearAll()
     lidarPointStore.clearAll()
+    laserScanStore.clearAll()
     sceneEntityStore.clearAll()
     runtimePoseStore.reset()
     tfRuntimeStore.reset()
     odomSceneCalibration.reset()
     setCameraFrustum({})
+    setLaserScanDisplay((prev) => ({ ...prev, topics: [] }))
     setDataSourceMode('idle')
     setFileName(null)
     setTopics([])
@@ -154,6 +162,7 @@ export function useOpenMcap() {
     setError,
     setFileName,
     setLidarDisplay,
+    setLaserScanDisplay,
     setPlaybackTime,
     setRange,
     setSelectedTopic,

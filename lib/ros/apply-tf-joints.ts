@@ -1,6 +1,10 @@
 import * as THREE from 'three'
 import { bindCasterWheelsToSwivels } from '@/lib/ros/caster-swivel'
-import { TF_FRAME_ALIASES, TF_WHEEL_CHILD_FRAMES } from '@/lib/ros/tf-config'
+import {
+  isCasterSwivelFrameId,
+  TF_FRAME_ALIASES,
+  TF_WHEEL_CHILD_FRAMES,
+} from '@/lib/ros/tf-config'
 import { ODOM_DELTA_FLIP_XZ } from '@/lib/ros/odom-scene-calibration'
 import { tfRuntimeStore, type TfEdge } from '@/lib/ros/tf-runtime-store'
 import { rosPositionToThree, rosRelativeQuaternionToThree } from '@/lib/ros/ros-three-coords'
@@ -28,7 +32,7 @@ function normalizeFrameId(frame: string): string {
 }
 
 function isCasterSwivelFrame(frameId: string): boolean {
-  return /^caster_swivel_(left|right)$/i.test(frameId)
+  return isCasterSwivelFrameId(frameId)
 }
 
 function isSwivelDebugEnabled(): boolean {
@@ -152,9 +156,11 @@ function ensureCasterWheelHierarchy(animRoot: THREE.Object3D) {
   const swivels: THREE.Object3D[] = []
   const casterWheels: THREE.Object3D[] = []
   animRoot.traverse((obj) => {
-    const name = obj.name?.toLowerCase() ?? ''
-    if (/^caster_swivel_(left|right)$/.test(name)) swivels.push(obj)
-    if (/^caster_wheel_(left|right)$/.test(name)) casterWheels.push(obj)
+    const name = obj.name ?? ''
+    if (isCasterSwivelFrameId(name)) swivels.push(obj)
+    if (/^(caster_wheel_(left|right)|(left|right)_caster)$/i.test(name)) {
+      casterWheels.push(obj)
+    }
   })
 
   if (swivels.length > 0 && casterWheels.length > 0) {

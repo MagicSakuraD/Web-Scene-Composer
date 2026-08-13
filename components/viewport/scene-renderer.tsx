@@ -29,6 +29,8 @@ import { RuntimeRobotSync } from './runtime-robot-sync'
 import { LidarPointCloud } from './lidar-point-cloud'
 import { SceneAnnotationCubes } from './scene-annotation-cubes'
 import { CameraFrustumProjections } from './camera-frustum-projections'
+import { TfAxesVisualization } from './tf-axes-visualization'
+import { LaserScanVisualization } from './laser-scan-visualization'
 import { EditableAnnotationBoxes } from '@/components/annotations/editable-annotation-boxes'
 import { AnnotationTransformGizmo } from '@/components/annotations/annotation-transform-gizmo'
 import { showReadonlySceneAnnotationsAtom } from '@/lib/annotations/atoms'
@@ -333,6 +335,8 @@ export function SceneRenderer() {
       <ViewportSceneHelpers />
       <RuntimeRobotSync />
       {VIEWPORT_WEBGPU_FEATURES.lidarPointCloud ? <LidarPointCloud /> : null}
+      <LaserScanVisualization />
+      <TfAxesVisualization />
       {showReadonly ? <SceneAnnotationCubes /> : null}
       <CameraFrustumProjections />
       <EditableAnnotationBoxes />

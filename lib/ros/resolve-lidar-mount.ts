@@ -10,16 +10,23 @@ export const LIDAR_FRAME_TO_GLTF_NAMES: Record<string, readonly string[]> = {
   front_RPLidar: ['front_RPLidar', 'front_RPLidar_link'],
   front_RPLidar_link: ['front_RPLidar_link', 'front_RPLidar'],
   front_2d_lidar: ['front_RPLidar', 'front_2d_lidar'],
+  Lidar_Rear: ['Lidar_Rear', 'lidar_rear', 'rear_lidar'],
+  lidar_rear: ['lidar_rear', 'Lidar_Rear', 'rear_lidar'],
+  rear_lidar: ['rear_lidar', 'Lidar_Rear', 'lidar_rear'],
 }
 
-/** glTF 中 Nova Carter 雷达挂载节点 */
+/** glTF 中雷达挂载节点（Nova Carter / lw_hub 等） */
 const LIDAR_MOUNT_NAME_PATTERNS = [
   /^XT_32$/i,
   /^front_3d_lidar$/i,
   /^front_3d_lidar_link$/i,
   /^front_RPLidar$/i,
   /^front_RPLidar_link$/i,
+  /^Lidar_Rear$/i,
+  /^lidar_rear$/i,
+  /^rear_lidar$/i,
   /RPLidar/i,
+  /Lidar_/i,
 ]
 
 export function isLidarMountName(name: string): boolean {
