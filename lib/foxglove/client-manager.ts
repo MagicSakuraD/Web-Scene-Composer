@@ -35,7 +35,7 @@ import {
 import { FOXGLOVE_WS_CANDIDATES, FOXGLOVE_WS_SUBPROTOCOLS } from '@/lib/ros/foxglove-config'
 import {
   CMD_VEL_TOPIC,
-  ODOM_TOPIC,
+  ODOM_TOPIC_CANDIDATES,
   TF_TOPIC,
   type SimulateLogEntry,
 } from '@/lib/ros/atoms'
@@ -468,12 +468,15 @@ class FoxgloveBridgeManager {
   }
 
   private syncOdomSubscription(client: FoxgloveClient) {
-    const odom = this.channels.find((c) => c.topic === ODOM_TOPIC)
-    if (odom && this.odomSubscriptionId == null) {
-      this.odomChannelId = odom.id
-      this.odomSubscriptionId = client.subscribe(odom.id)
-      this.log({ level: 'info', message: `已订阅 ${ODOM_TOPIC}` })
-    }
+    if (this.odomSubscriptionId != null) return
+    const odom =
+      ODOM_TOPIC_CANDIDATES.map((topic) => this.channels.find((c) => c.topic === topic)).find(
+        (c): c is Channel => c != null,
+      ) ?? this.channels.find((c) => c.schemaName.includes('Odometry'))
+    if (!odom) return
+    this.odomChannelId = odom.id
+    this.odomSubscriptionId = client.subscribe(odom.id)
+    this.log({ level: 'info', message: `已订阅 ${odom.topic}` })
   }
 
   private syncTfSubscription(client: FoxgloveClient) {

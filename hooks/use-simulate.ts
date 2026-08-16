@@ -91,7 +91,7 @@ export function useSimulate() {
       const url = foxgloveManager.getConnectedUrl()
       pushLog({
         level: 'info',
-        message: `Simulate 已连接${url ? ` (${url})` : ''} — 订阅 /chassis/odom、/tf`,
+        message: `Simulate 已连接${url ? ` (${url})` : ''} — 订阅 odom、/tf（GLB 绑定 base_link）`,
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

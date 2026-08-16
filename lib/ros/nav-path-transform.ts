@@ -1,12 +1,11 @@
 import * as THREE from 'three'
 import { rosPositionToThree } from '@/lib/ros/ros-three-coords'
-import { odomSceneCalibration } from '@/lib/ros/odom-scene-calibration'
-import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
+import { getSceneFixedFrameNow } from '@/lib/ros/playback-display-frame'
+import { tfRuntimeStore, type RosTransform } from '@/lib/ros/tf-runtime-store'
 import { NAV_MAP_FRAME } from '@/lib/ros/nav-goal-config'
 
 const _scratch = new THREE.Vector3()
-const _robotPos = new THREE.Vector3()
-const _robotQuat = new THREE.Quaternion()
+const _q = new THREE.Quaternion()
 
 export function normalizeRosFrameId(frameId: string): string {
   const id = frameId.trim()
@@ -14,12 +13,23 @@ export function normalizeRosFrameId(frameId: string): string {
   return id.startsWith('/') ? id.slice(1) : id
 }
 
+function applyRosTransformToPoint(
+  T: RosTransform,
+  x: number,
+  y: number,
+  z: number,
+  out: THREE.Vector3,
+) {
+  _q.set(T.rotation.x, T.rotation.y, T.rotation.z, T.rotation.w)
+  out.set(x, y, z).applyQuaternion(_q)
+  out.x += T.translation.x
+  out.y += T.translation.y
+  out.z += T.translation.z
+}
+
 /**
- * 将 Path 中的位姿点变换到 Three.js 场景坐标。
- *
- * - map：全局规划，与 GLB 场景同系（/plan 正确的原因）
- * - odom：局部规划常用系；需与小车相同的 odom→场景校准，不是相对小车 body 的增量
- * - base_link：相对车体；需叠在小车当前显示位姿上
+ * Path / costmap 原点 → Three 场景坐标。
+ * 与 TF 轴、GLB 相同：先 lookup(fixedFrame, pathFrame)，再 ROS→Three。
  */
 export function rosPathPointToSceneThree(
   rosX: number,
@@ -29,32 +39,16 @@ export function rosPathPointToSceneThree(
   out = _scratch,
 ): THREE.Vector3 {
   const frame = normalizeRosFrameId(frameId)
+  const fixed = getSceneFixedFrameNow()
 
-  if (frame === NAV_MAP_FRAME) {
-    return rosPositionToThree(rosX, rosY, rosZ, out)
-  }
-
-  if (frame === 'odom') {
-    return odomSceneCalibration.odomRosPointToSceneThree(rosX, rosY, rosZ, out)
-  }
-
-  if (frame === 'base_link' || frame === 'base_footprint') {
-    if (!runtimePoseStore.hasOdom || !odomSceneCalibration.isReady()) {
-      return rosPositionToThree(rosX, rosY, rosZ, out)
+  if (fixed && frame && fixed !== frame) {
+    const T = tfRuntimeStore.lookupTransform(fixed, frame)
+    if (T) {
+      applyRosTransformToPoint(T, rosX, rosY, rosZ, out)
+      return rosPositionToThree(out.x, out.y, out.z, out)
     }
-    const { pos, quat } = odomSceneCalibration.computeDisplayPose(
-      runtimePoseStore.position,
-      runtimePoseStore.quaternion,
-      _robotPos,
-      _robotQuat,
-    )
-    rosPositionToThree(rosX, rosY, rosZ, out)
-    out.applyQuaternion(quat)
-    out.add(pos)
-    return out
   }
 
-  // 未知坐标系：先按 map 处理，避免完全不可见
   return rosPositionToThree(rosX, rosY, rosZ, out)
 }
 

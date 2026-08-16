@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useAtomValue } from 'jotai'
 import * as THREE from 'three'
+import { disableSensorRaycast } from '@/lib/viewport/viewport-layers'
 import { lidarDisplayAtom } from '@/lib/ros/atoms'
 import { dataSourceActiveAtom } from '@/lib/playback/atoms'
 import {
@@ -44,6 +45,11 @@ export function LidarPointCloud() {
   const solidColorScratch = useMemo(() => new THREE.Color(), [])
 
   const { material, uniforms } = useMemo(() => createLidarTslMaterial(), [])
+
+  useLayoutEffect(() => {
+    const pts = pointsRef.current
+    if (pts) disableSensorRaycast(pts)
+  }, [config.visible])
 
   const simActive = dataSourceActive
 

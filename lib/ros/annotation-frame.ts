@@ -1,6 +1,10 @@
 import * as THREE from 'three'
 import { tfRuntimeStore, type RosTransform } from '@/lib/ros/tf-runtime-store'
 
+const _qT = new THREE.Quaternion()
+const _qLocal = new THREE.Quaternion()
+const _p = new THREE.Vector3()
+
 export function applyRosPose(
   T: RosTransform,
   position: [number, number, number],
@@ -55,4 +59,36 @@ export function poseFromDisplayFrame(
   const T = tfRuntimeStore.lookupTransform(storage, display)
   if (!T) return { position, orientation }
   return applyRosPose(T, position, orientation)
+}
+
+/**
+ * Write source-frame pose into `object` in display-frame (ROS).
+ * Reuses scratch quaternions/vectors — safe in useFrame.
+ */
+export function applyDisplayPoseToObject(
+  sourceFrame: string,
+  displayFrame: string,
+  position: [number, number, number],
+  orientation: [number, number, number, number],
+  object: THREE.Object3D,
+) {
+  const src = sourceFrame || 'map'
+  const dst = displayFrame || src
+  _qLocal.set(orientation[0], orientation[1], orientation[2], orientation[3])
+  _p.set(position[0], position[1], position[2])
+  if (dst && src !== dst) {
+    const T = tfRuntimeStore.lookupTransform(dst, src)
+    if (T) {
+      _qT.set(T.rotation.x, T.rotation.y, T.rotation.z, T.rotation.w)
+      _p.applyQuaternion(_qT)
+      _p.x += T.translation.x
+      _p.y += T.translation.y
+      _p.z += T.translation.z
+      object.position.copy(_p)
+      object.quaternion.copy(_qT).multiply(_qLocal)
+      return
+    }
+  }
+  object.position.copy(_p)
+  object.quaternion.copy(_qLocal)
 }

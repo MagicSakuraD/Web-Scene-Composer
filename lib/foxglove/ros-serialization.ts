@@ -44,6 +44,10 @@ export interface OdomMessage extends OdomPose {
     linear: { x: number; y: number; z: number }
     angular: { x: number; y: number; z: number }
   }
+  /** header.frame_id，通常为 odom */
+  frameId: string
+  /** child_frame_id，通常为 base_link */
+  childFrameId: string
 }
 
 export function encodeTwist(cmd: CmdVel): Uint8Array {
@@ -56,6 +60,8 @@ export function encodeTwist(cmd: CmdVel): Uint8Array {
 export function decodeOdometry(data: Uint8Array): OdomMessage | null {
   try {
     const msg = odomReader.readMessage<{
+      header?: { frame_id?: string }
+      child_frame_id?: string
       pose: {
         pose: {
           position: { x: number; y: number; z: number }
@@ -73,6 +79,8 @@ export function decodeOdometry(data: Uint8Array): OdomMessage | null {
       position: msg.pose.pose.position,
       orientation: msg.pose.pose.orientation,
       twist: msg.twist.twist,
+      frameId: msg.header?.frame_id ?? 'odom',
+      childFrameId: msg.child_frame_id ?? 'base_link',
     }
   } catch {
     return null

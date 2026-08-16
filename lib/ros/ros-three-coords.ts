@@ -35,6 +35,20 @@ export function rosQuaternionToThree(
 }
 
 /**
+ * ROS 位姿（与 TF axes 同一套：C · p、C · q）→ Three 世界位姿。
+ * 用于把 lookupTransform / odom 结果写到 GLB 根节点。
+ */
+export function rosTransformToThreeWorld(
+  translation: { x: number; y: number; z: number },
+  rotation: { x: number; y: number; z: number; w: number },
+  outPos: THREE.Vector3,
+  outQuat: THREE.Quaternion,
+) {
+  rosPositionToThree(translation.x, translation.y, translation.z, outPos)
+  rosQuaternionToThree(rotation.x, rotation.y, rotation.z, rotation.w, outQuat)
+}
+
+/**
  * 父→子相对旋转（TF 关节）ROS → Three.js。
  * 用共轭变换 q_three = C · q_ros · C⁻¹，而非世界位姿用的 C · q_ros。
  */

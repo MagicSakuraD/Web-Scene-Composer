@@ -20,6 +20,8 @@ export interface SimulateLogEntry {
 
 export const CMD_VEL_TOPIC = '/cmd_vel'
 export const ODOM_TOPIC = '/chassis/odom'
+/** 依次尝试：Isaac Nova Carter → 通用 /odom */
+export const ODOM_TOPIC_CANDIDATES = ['/chassis/odom', '/odom'] as const
 
 export { TF_TOPIC } from '@/lib/ros/tf-config'
 
@@ -166,16 +168,23 @@ export const DEFAULT_TF_DISPLAY: TfDisplayConfig = {
 
 export const tfDisplayAtom = atom<TfDisplayConfig>(DEFAULT_TF_DISPLAY)
 
+export type LaserScanColorMode = 'distance' | 'solid'
+
 export interface LaserScanDisplayConfig {
   /** 可同时显示多个 LaserScan 话题 */
   topics: string[]
   color: string
+  opacity: number
+  /** distance：近红远青（与 3D 点云一致）；solid：单色 */
+  colorMode: LaserScanColorMode
   pointSize: number
 }
 
 export const laserScanDisplayAtom = atom<LaserScanDisplayConfig>({
   topics: [],
   color: '#ff8c42',
+  opacity: 0.9,
+  colorMode: 'distance',
   pointSize: 0.04,
 })
 

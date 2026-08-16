@@ -17,6 +17,7 @@ import {
   cameraFrustumByTopicAtom,
   DEFAULT_CAMERA_FRUSTUM,
   type LidarColorMode,
+  type LaserScanColorMode,
 } from '@/lib/ros/atoms'
 import {
   isLaserScanTopic,
@@ -204,13 +205,47 @@ function LaserScanInlineSettings({ topic }: { topic: string }) {
   return (
     <div className="px-2 py-2 space-y-1.5 border-t border-border/60">
       <label className="flex items-center justify-between gap-2 text-[10px]">
-        <span className="text-muted-foreground">{t('playback.topicTree.color')}</span>
-        <input
-          type="color"
-          value={config.color}
-          className="h-5 w-10 rounded border border-border bg-transparent"
+        <span className="text-muted-foreground">{t('playback.topicTree.colorMode')}</span>
+        <select
+          value={config.colorMode}
+          className="flex-1 max-w-[9rem] bg-input border border-border rounded px-1.5 py-0.5 text-[10px]"
           onClick={(e) => e.stopPropagation()}
-          onChange={(e) => setConfig((c) => ({ ...c, color: e.target.value }))}
+          onChange={(e) =>
+            setConfig((c) => ({
+              ...c,
+              colorMode: e.target.value as LaserScanColorMode,
+            }))
+          }
+        >
+          <option value="distance">{t('playback.topicTree.colorDistance')}</option>
+          <option value="solid">{t('playback.topicTree.colorSolid')}</option>
+        </select>
+      </label>
+      {config.colorMode === 'solid' && (
+        <label className="flex items-center justify-between gap-2 text-[10px]">
+          <span className="text-muted-foreground">{t('playback.topicTree.color')}</span>
+          <input
+            type="color"
+            value={config.color}
+            className="h-5 w-10 rounded border border-border bg-transparent"
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => setConfig((c) => ({ ...c, color: e.target.value }))}
+          />
+        </label>
+      )}
+      <label className="flex items-center justify-between gap-2 text-[10px]">
+        <span className="text-muted-foreground">{t('playback.topicTree.opacity')}</span>
+        <input
+          type="range"
+          min={0.1}
+          max={1}
+          step={0.05}
+          value={config.opacity}
+          className="flex-1 max-w-[9rem]"
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) =>
+            setConfig((c) => ({ ...c, opacity: parseFloat(e.target.value) }))
+          }
         />
       </label>
       <label className="flex items-center justify-between gap-2 text-[10px]">

@@ -3,15 +3,18 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useAtomValue } from 'jotai'
-import * as THREE from 'three'
-import { dataSourceActiveAtom } from '@/lib/playback/atoms'
+import { dataSourceActiveAtom, dataSourceModeAtom } from '@/lib/playback/atoms'
 import { applyWheelJointsFromTf, resetTfJointCalibration } from '@/lib/ros/apply-tf-joints'
+import { applyRobotPoseFromTf } from '@/lib/ros/apply-robot-tf-pose'
+import { applyWorldPose } from '@/lib/ros/apply-world-pose'
+import { tfDisplayAtom } from '@/lib/ros/atoms'
 import { odomSceneCalibration } from '@/lib/ros/odom-scene-calibration'
+import { resolveSceneFixedFrame } from '@/lib/ros/playback-display-frame'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
 import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
 import { objectByNodeId } from '@/lib/scene/object-registry'
-import { applyWorldPose } from '@/lib/ros/apply-world-pose'
 import { resolveRobotAnimRoot } from '@/lib/ros/caster-swivel'
+import { lidarPointStore } from '@/lib/ros/lidar-point-store'
 import {
   applyWheelSpinFromOdom,
   collectWheelSpinTargets,
@@ -19,20 +22,20 @@ import {
   type WheelSpinTargets,
 } from '@/lib/ros/wheel-spin'
 
-const _displayPos = new THREE.Vector3()
-const _displayQuat = new THREE.Quaternion()
-
 /**
  * 每帧同步：
- * - 底盘位姿 ← ROS /chassis/odom（相对 GLB 静态起点做增量，方案 B）
- * - 万向轮支架转向 ← ROS /tf（caster_swivel_*）
- * - 四轮滚动 ← odom twist 本地 Dead Reckoning（高频、顺滑）
+ * - 底盘位姿 ← /tf（fixed frame → base_link），与 TF 轴同一套 lookup
+ * - 无 TF 时回退绝对 odom（不再用相对场景起点的方案 B）
+ * - 万向轮支架转向 ← /tf
+ * - 四轮滚动 ← odom twist Dead Reckoning
  */
 export function RuntimeRobotSync() {
   const dataSourceActive = useAtomValue(dataSourceActiveAtom)
+  const dataSourceMode = useAtomValue(dataSourceModeAtom)
+  const tfConfig = useAtomValue(tfDisplayAtom)
   const boundTargetRef = useRef<string | null>(null)
+  const poseLoggedRef = useRef(false)
   const tfLoggedRef = useRef(false)
-  const calibLoggedRef = useRef(false)
   const wheelTargetsRef = useRef<WheelSpinTargets | null>(null)
 
   useFrame((_, delta) => {
@@ -46,8 +49,8 @@ export function RuntimeRobotSync() {
 
     if (boundTargetRef.current !== targetId) {
       boundTargetRef.current = targetId
+      poseLoggedRef.current = false
       tfLoggedRef.current = false
-      calibLoggedRef.current = false
       wheelTargetsRef.current = null
       odomSceneCalibration.reset()
       const animRoot = resolveRobotAnimRoot(obj)
@@ -55,30 +58,27 @@ export function RuntimeRobotSync() {
       resetWheelSpinStates(animRoot)
     }
 
-    odomSceneCalibration.captureSceneOrigin(obj)
+    const fixedFrame = resolveSceneFixedFrame({
+      configured: tfConfig.fixedFrame,
+      dataSourceMode,
+      lidarFrameId: lidarPointStore.frameId,
+    })
 
-    if (!runtimePoseStore.hasOdom) return
-
-    odomSceneCalibration.captureOdomOrigin(
-      runtimePoseStore.position,
-      runtimePoseStore.quaternion,
-    )
-
-    if (!odomSceneCalibration.isReady()) return
-
-    if (process.env.NODE_ENV === 'development' && !calibLoggedRef.current) {
-      calibLoggedRef.current = true
-      console.info('[RuntimeRobotSync] odom 已对齐 GLB 静态起点（方案 B）')
+    const fromTf = tfRuntimeStore.active && applyRobotPoseFromTf(obj, fixedFrame)
+    if (!fromTf) {
+      if (!runtimePoseStore.hasOdom) return
+      applyWorldPose(obj, runtimePoseStore.position, runtimePoseStore.quaternion)
+      obj.updateMatrixWorld(true)
     }
 
-    const { pos, quat } = odomSceneCalibration.computeDisplayPose(
-      runtimePoseStore.position,
-      runtimePoseStore.quaternion,
-      _displayPos,
-      _displayQuat,
-    )
-    applyWorldPose(obj, pos, quat)
-    obj.updateMatrixWorld(true)
+    if (process.env.NODE_ENV === 'development' && !poseLoggedRef.current) {
+      poseLoggedRef.current = true
+      console.info('[RuntimeRobotSync] 底盘已绑定', {
+        source: fromTf ? `tf ${fixedFrame}→base` : 'odom absolute',
+        node: obj.name,
+        fixedFrame,
+      })
+    }
 
     const animRoot = resolveRobotAnimRoot(obj)
 

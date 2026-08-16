@@ -1,182 +1,164 @@
 'use client'
 
 import { useEffect, useMemo, useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { useAtomValue } from 'jotai'
+import { getDefaultStore } from 'jotai'
 import * as THREE from 'three'
 import {
-  sampledAnnotationsAtPlayheadAtom,
+  annotationTracksAtom,
   selectedTrackIdAtom,
 } from '@/lib/annotations/atoms'
-import type { SampledAnnotationBox } from '@/lib/annotations/types'
+import { sampleTracksAt, type SampledAnnotationBox } from '@/lib/annotations/types'
 import { ROS_TO_THREE_Q } from '@/lib/ros/ros-three-coords'
-import { poseToDisplayFrame } from '@/lib/ros/annotation-frame'
-import {
-  getPlaybackCloudFrameId,
-  getPlaybackGroundLiftY,
-} from '@/lib/ros/playback-display-frame'
-import { tfRuntimeStore } from '@/lib/ros/tf-runtime-store'
+import { applyDisplayPoseToObject } from '@/lib/ros/annotation-frame'
+import { getPlaybackCloudFrameId, getPlaybackGroundLiftY } from '@/lib/ros/playback-display-frame'
 import { lidarPointStore } from '@/lib/ros/lidar-point-store'
 import {
   registerAnnotationObject,
   unregisterAnnotationObject,
 } from '@/lib/annotations/object-registry'
 import { transformGizmoState } from '@/lib/viewport/transform-gizmo-state'
-import { useSyncExternalStore } from 'react'
+import { playbackTimeNsAtom } from '@/lib/playback/atoms'
 
-function useTfGeneration(): number {
-  return useSyncExternalStore(
-    (onStoreChange) => tfRuntimeStore.subscribe(onStoreChange),
-    () => tfRuntimeStore.generation,
-    () => tfRuntimeStore.generation,
-  )
+interface EditableSlot {
+  group: THREE.Group
+  mesh: THREE.Mesh
+  fillMat: THREE.MeshBasicMaterial
+  edgeMat: THREE.LineBasicMaterial
 }
 
-function useLidarFrameId(): string {
-  return useSyncExternalStore(
-    (onStoreChange) => lidarPointStore.subscribe(onStoreChange),
-    () => lidarPointStore.getSnapshot().frameId,
-    () => lidarPointStore.getSnapshot().frameId,
-  )
+function createSlot(
+  trackId: string,
+  unitBox: THREE.BoxGeometry,
+  unitEdges: THREE.EdgesGeometry,
+  parent: THREE.Object3D,
+): EditableSlot {
+  const group = new THREE.Group()
+  const fillMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false,
+  })
+  const edgeMat = new THREE.LineBasicMaterial({
+    transparent: true,
+    toneMapped: false,
+    depthTest: true,
+  })
+  const mesh = new THREE.Mesh(unitBox, fillMat)
+  const edges = new THREE.LineSegments(unitEdges, edgeMat)
+  group.add(mesh)
+  group.add(edges)
+  group.userData.annotationTrackId = trackId
+  group.userData.annotationSource = 'editable'
+  mesh.userData.annotationTrackId = trackId
+  mesh.userData.annotationSource = 'editable'
+  edges.userData.annotationTrackId = trackId
+  parent.add(group)
+  registerAnnotationObject(trackId, group)
+  return { group, mesh, fillMat, edgeMat }
 }
 
-function EditableBox({
-  box,
-  displayFrame,
-  selected,
-  tfGen,
-}: {
-  box: SampledAnnotationBox
-  displayFrame: string
-  selected: boolean
-  tfGen: number
-}) {
-  const groupRef = useRef<THREE.Group>(null)
-  const meshRef = useRef<THREE.Mesh>(null)
+function updateSlot(slot: EditableSlot, box: SampledAnnotationBox, displayFrame: string, selected: boolean) {
+  const dragging =
+    transformGizmoState.dragging && transformGizmoState.draggingNodeId === box.trackId
 
-  const posed = useMemo(() => {
-    const p = poseToDisplayFrame(
-      box.frameId,
-      displayFrame,
-      box.position,
-      box.orientation,
-    )
-    const size: [number, number, number] = [
-      Math.max(1e-3, Math.abs(box.size[0]) || 1e-3),
-      Math.max(1e-3, Math.abs(box.size[1]) || 1e-3),
-      Math.max(1e-3, Math.abs(box.size[2]) || 1e-3),
-    ]
-    const [r, g, b, a] = box.color
-    return {
-      position: p.position,
-      quaternion: p.orientation,
-      size,
-      color: new THREE.Color(r, g, b),
-      fillOpacity: selected
-        ? Math.min(0.45, Math.max(0.2, (a || 0.5) * 0.7))
-        : Math.min(0.28, Math.max(0.12, (a || 0.5) * 0.5)),
-      edgeOpacity: selected ? 1 : 0.85,
-    }
-  }, [box, displayFrame, selected, tfGen])
+  const sx = Math.max(1e-3, Math.abs(box.size[0]) || 1e-3)
+  const sy = Math.max(1e-3, Math.abs(box.size[1]) || 1e-3)
+  const sz = Math.max(1e-3, Math.abs(box.size[2]) || 1e-3)
+  const size: [number, number, number] = [sx, sy, sz]
+  const [r, g, b, a] = box.color
 
-  const { boxGeo, edgesGeo } = useMemo(() => {
-    const boxG = new THREE.BoxGeometry(posed.size[0], posed.size[1], posed.size[2])
-    const edges = new THREE.EdgesGeometry(boxG)
-    return { boxGeo: boxG, edgesGeo: edges }
-  }, [posed.size[0], posed.size[1], posed.size[2]])
+  slot.group.visible = true
+  slot.group.userData.annotationLabel = box.label
+  slot.group.userData.annotationBaseSize = size
+  slot.mesh.userData.annotationLabel = box.label
+  slot.mesh.scale.set(sx, sy, sz)
+
+  slot.fillMat.color.setRGB(r, g, b)
+  slot.fillMat.opacity = selected
+    ? Math.min(0.45, Math.max(0.2, (a || 0.5) * 0.7))
+    : Math.min(0.28, Math.max(0.12, (a || 0.5) * 0.5))
+  slot.edgeMat.color.setRGB(r, g, b)
+  slot.edgeMat.opacity = selected ? 1 : 0.85
+
+  if (dragging) return
+
+  applyDisplayPoseToObject(box.frameId, displayFrame, box.position, box.orientation, slot.group)
+  slot.group.scale.set(1, 1, 1)
+}
+
+function disposeSlot(slot: EditableSlot, parent: THREE.Object3D | null, trackId: string) {
+  unregisterAnnotationObject(trackId)
+  parent?.remove(slot.group)
+  slot.fillMat.dispose()
+  slot.edgeMat.dispose()
+}
+
+/** Editable tracks: shared unit geometry, poses sampled in useFrame (not TF-reactive). */
+export function EditableAnnotationBoxes() {
+  const tracks = useAtomValue(annotationTracksAtom)
+  const selectedId = useAtomValue(selectedTrackIdAtom)
+  const liftRef = useRef<THREE.Group>(null)
+  const rosRef = useRef<THREE.Group>(null)
+  const poolRef = useRef<Map<string, EditableSlot>>(new Map())
+  const tracksRef = useRef(tracks)
+  const selectedRef = useRef(selectedId)
+  tracksRef.current = tracks
+  selectedRef.current = selectedId
+
+  const unitBox = useMemo(() => new THREE.BoxGeometry(1, 1, 1), [])
+  const unitEdges = useMemo(() => new THREE.EdgesGeometry(unitBox), [unitBox])
 
   useEffect(() => {
     return () => {
-      boxGeo.dispose()
-      edgesGeo.dispose()
+      unitBox.dispose()
+      unitEdges.dispose()
+      const ros = rosRef.current
+      for (const [id, slot] of poolRef.current) {
+        disposeSlot(slot, ros, id)
+      }
+      poolRef.current.clear()
     }
-  }, [boxGeo, edgesGeo])
+  }, [unitBox, unitEdges])
 
-  useEffect(() => {
-    const g = groupRef.current
-    if (!g) return
-    registerAnnotationObject(box.trackId, g)
-    g.userData.annotationTrackId = box.trackId
-    g.userData.annotationBaseSize = posed.size
-    g.userData.annotationLabel = box.label
-    g.userData.annotationSource = 'editable'
-    return () => unregisterAnnotationObject(box.trackId)
-  }, [box.trackId, box.label, posed.size])
+  useFrame(() => {
+    const ros = rosRef.current
+    const lift = liftRef.current
+    if (!ros || !lift) return
 
-  useEffect(() => {
-    const g = groupRef.current
-    if (!g) return
-    if (
-      transformGizmoState.dragging &&
-      transformGizmoState.draggingNodeId === box.trackId
-    ) {
-      return
+    lift.position.set(0, getPlaybackGroundLiftY(), 0)
+    const timeNs = getDefaultStore().get(playbackTimeNsAtom)
+    const sampled = sampleTracksAt(tracksRef.current, timeNs)
+    const displayFrame = lidarPointStore.frameId || getPlaybackCloudFrameId()
+    const selectedIdNow = selectedRef.current
+    const live = new Set<string>()
+    const trackIds = new Set(tracksRef.current.map((t) => t.id))
+
+    for (const box of sampled) {
+      live.add(box.trackId)
+      let slot = poolRef.current.get(box.trackId)
+      if (!slot) {
+        slot = createSlot(box.trackId, unitBox, unitEdges, ros)
+        poolRef.current.set(box.trackId, slot)
+      }
+      updateSlot(slot, box, displayFrame, box.trackId === selectedIdNow)
     }
-    g.position.set(posed.position[0], posed.position[1], posed.position[2])
-    g.quaternion.set(
-      posed.quaternion[0],
-      posed.quaternion[1],
-      posed.quaternion[2],
-      posed.quaternion[3],
-    )
-    g.scale.set(1, 1, 1)
-    g.userData.annotationBaseSize = posed.size
-    g.userData.annotationLabel = box.label
-  }, [posed, box.trackId, box.label])
 
-  const hoverData = {
-    annotationTrackId: box.trackId,
-    annotationLabel: box.label,
-    annotationSource: 'editable' as const,
-  }
+    for (const [id, slot] of poolRef.current) {
+      if (live.has(id)) continue
+      if (!trackIds.has(id)) {
+        disposeSlot(slot, ros, id)
+        poolRef.current.delete(id)
+      } else {
+        slot.group.visible = false
+      }
+    }
+  })
 
   return (
-    <group ref={groupRef} userData={hoverData}>
-      <mesh ref={meshRef} geometry={boxGeo} userData={hoverData}>
-        <meshBasicMaterial
-          color={posed.color}
-          transparent
-          opacity={posed.fillOpacity}
-          depthWrite={false}
-          toneMapped={false}
-        />
-      </mesh>
-      <lineSegments geometry={edgesGeo} userData={hoverData}>
-        <lineBasicMaterial
-          color={posed.color}
-          transparent
-          opacity={posed.edgeOpacity}
-          toneMapped={false}
-          depthTest
-        />
-      </lineSegments>
-    </group>
-  )
-}
-
-/** Editable annotation tracks sampled at playhead (ROS under ROS→Three). */
-export function EditableAnnotationBoxes() {
-  const boxes = useAtomValue(sampledAnnotationsAtPlayheadAtom)
-  const selectedId = useAtomValue(selectedTrackIdAtom)
-  const tfGen = useTfGeneration()
-  const lidarFrameId = useLidarFrameId()
-  const displayFrame = lidarFrameId || getPlaybackCloudFrameId()
-  const groundLiftY = useMemo(() => getPlaybackGroundLiftY(), [tfGen, lidarFrameId])
-
-  if (boxes.length === 0) return null
-
-  return (
-    <group name="editable-annotations" position={[0, groundLiftY, 0]}>
-      <group quaternion={ROS_TO_THREE_Q}>
-        {boxes.map((box) => (
-          <EditableBox
-            key={box.trackId}
-            box={box}
-            displayFrame={displayFrame}
-            selected={box.trackId === selectedId}
-            tfGen={tfGen}
-          />
-        ))}
-      </group>
+    <group ref={liftRef} name="editable-annotations">
+      <group ref={rosRef} quaternion={ROS_TO_THREE_Q} />
     </group>
   )
 }

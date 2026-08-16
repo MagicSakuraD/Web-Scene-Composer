@@ -15,6 +15,7 @@ import { ViewportPostProcessing } from './viewport-post-processing'
 import { ViewportShading } from './viewport-shading'
 import { ViewportPicker } from './viewport-picker'
 import { ViewportNavigation } from './viewport-navigation'
+import { FollowEgoCamera } from './follow-ego-camera'
 import { AnnotationHoverRaycast } from '@/components/annotations/annotation-hover-raycast'
 import { CANVAS_GL_CONFIG, VIEWPORT_SHADOW_CONFIG, VIEWPORT_WEBGPU_FEATURES } from '@/lib/viewport/visual-config'
 import { patchRendererForLegacyCompat } from '@/lib/viewport/patch-renderer-compat'
@@ -115,6 +116,7 @@ export function SceneCanvas() {
               }
         }
       />
+      <FollowEgoCamera />
       <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
         <GizmoViewport axisColors={['#ef4444', '#22c55e', '#3b82f6']} labelColor="white" />
       </GizmoHelper>

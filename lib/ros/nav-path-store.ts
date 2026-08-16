@@ -30,8 +30,7 @@ const EMPTY_LAYER: NavPathLayerSnapshot = {
 }
 
 function frameNeedsLiveTransform(frameId: string): boolean {
-  const f = normalizeRosFrameId(frameId)
-  return f === 'odom' || f === 'base_link' || f === 'base_footprint'
+  return Boolean(normalizeRosFrameId(frameId))
 }
 
 class NavPathLayer {

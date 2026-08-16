@@ -4,18 +4,25 @@ import { useEffect, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
 import { useSetAtom } from 'jotai'
 import * as THREE from 'three'
-import { annotationHoverAtom } from '@/lib/annotations/hover'
-import { resolveAnnotationHoverLabel } from '@/lib/annotations/object-registry'
+import {
+  annotationHoverAtom,
+  moveAnnotationHoverTooltip,
+} from '@/lib/annotations/hover'
+import {
+  collectAnnotationPickables,
+  resolveAnnotationHoverLabel,
+} from '@/lib/annotations/object-registry'
 import { transformGizmoState } from '@/lib/viewport/transform-gizmo-state'
 
 const _pointer = new THREE.Vector2()
 const _raycaster = new THREE.Raycaster()
 
 /**
- * Foxglove-like: pointermove raycast → category tooltip (DOM overlay via atom).
+ * Foxglove-like: pointermove raycast → category tooltip.
+ * Only tests annotation pickables (not LiDAR / warehouse meshes).
  */
 export function AnnotationHoverRaycast() {
-  const { camera, scene, gl } = useThree()
+  const { camera, gl } = useThree()
   const setHover = useSetAtom(annotationHoverAtom)
   const lastKeyRef = useRef('')
 
@@ -34,24 +41,32 @@ export function AnnotationHoverRaycast() {
         return
       }
 
+      const targets = collectAnnotationPickables()
+      if (targets.length === 0) {
+        clear()
+        return
+      }
+
       const rect = canvas.getBoundingClientRect()
       _pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
       _pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
       _raycaster.setFromCamera(_pointer, camera)
 
-      const hits = _raycaster.intersectObjects(scene.children, true)
+      const hits = _raycaster.intersectObjects(targets, true)
       for (const hit of hits) {
         const obj = hit.object
         if (obj.userData.ignorePick) continue
-        // LiDAR / path lines sit in front of boxes; only pick solid annotation meshes
         if (obj instanceof THREE.Points) continue
-        if (obj instanceof THREE.Line && !(obj instanceof THREE.LineSegments)) continue
-        if (!(obj instanceof THREE.Mesh) && !(obj instanceof THREE.LineSegments)) continue
 
-        const info = resolveAnnotationHoverLabel(obj)
+        const info = resolveAnnotationHoverLabel(obj, hit.instanceId)
         if (!info) continue
 
-        lastKeyRef.current = `${info.source}:${info.topic ?? ''}:${info.label}`
+        const key = `${info.source}:${info.topic ?? ''}:${info.label}`
+        if (lastKeyRef.current === key) {
+          moveAnnotationHoverTooltip(e.clientX, e.clientY)
+          return
+        }
+        lastKeyRef.current = key
         setHover({
           label: info.label,
           topic: info.topic,
@@ -73,7 +88,7 @@ export function AnnotationHoverRaycast() {
       canvas.removeEventListener('pointerleave', onLeave)
       clear()
     }
-  }, [camera, scene, gl, setHover])
+  }, [camera, gl, setHover])
 
   return null
 }

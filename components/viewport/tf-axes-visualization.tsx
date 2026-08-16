@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { useAtomValue } from 'jotai'
 import * as THREE from 'three'
 import { tfDisplayAtom } from '@/lib/ros/atoms'
@@ -13,144 +14,160 @@ import {
 } from '@/lib/ros/playback-display-frame'
 import { lidarPointStore } from '@/lib/ros/lidar-point-store'
 
-function useTfGeneration(): number {
-  return useSyncExternalStore(
-    (cb) => tfRuntimeStore.subscribe(cb),
-    () => tfRuntimeStore.generation,
-    () => tfRuntimeStore.generation,
-  )
+const IDENTITY_T: RosTransform = {
+  translation: { x: 0, y: 0, z: 0 },
+  rotation: { x: 0, y: 0, z: 0, w: 1 },
 }
 
-function useLidarFrameId(): string {
-  return useSyncExternalStore(
-    (cb) => lidarPointStore.subscribe(cb),
-    () => lidarPointStore.getSnapshot().frameId,
-    () => lidarPointStore.getSnapshot().frameId,
-  )
+const MAX_TF_LINKS = 128
+const LINK_FLOATS = MAX_TF_LINKS * 2 * 3
+
+interface AxesEntry {
+  group: THREE.Group
+  axes: THREE.AxesHelper
 }
 
-function identityT(): RosTransform {
-  return {
-    translation: { x: 0, y: 0, z: 0 },
-    rotation: { x: 0, y: 0, z: 0, w: 1 },
-  }
+function lookupOrIdentity(fixedFrame: string, frame: string): RosTransform | null {
+  if (fixedFrame === frame) return IDENTITY_T
+  return tfRuntimeStore.lookupTransform(fixedFrame, frame)
 }
 
-function ParentLink({ positions }: { positions: Float32Array }) {
-  const geo = useMemo(() => {
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    return g
-  }, [positions])
-
-  useEffect(() => () => geo.dispose(), [geo])
-
-  return (
-    <lineSegments geometry={geo}>
-      <lineBasicMaterial color="#e8c84a" toneMapped={false} transparent opacity={0.85} />
-    </lineSegments>
-  )
-}
-
-function FrameAxes({
-  frame,
-  fixedFrame,
-  axisLength,
-  showLinks,
-  selected,
-}: {
-  frame: string
-  fixedFrame: string
-  axisLength: number
-  showLinks: boolean
-  selected: boolean
-}) {
-  const T =
-    fixedFrame === frame
-      ? identityT()
-      : (tfRuntimeStore.lookupTransform(fixedFrame, frame) ?? null)
-  if (!T) return null
-
-  const parentEdge = tfRuntimeStore.getEdge(frame)
-  let parentLine: Float32Array | null = null
-  if (showLinks && parentEdge) {
-    const Tp =
-      fixedFrame === parentEdge.parentFrame
-        ? identityT()
-        : tfRuntimeStore.lookupTransform(fixedFrame, parentEdge.parentFrame)
-    if (Tp) {
-      parentLine = new Float32Array([
-        Tp.translation.x,
-        Tp.translation.y,
-        Tp.translation.z,
-        T.translation.x,
-        T.translation.y,
-        T.translation.z,
-      ])
-    }
-  }
-
-  const quat = new THREE.Quaternion(
-    T.rotation.x,
-    T.rotation.y,
-    T.rotation.z,
-    T.rotation.w,
-  )
-
-  return (
-    <group>
-      <group
-        position={[T.translation.x, T.translation.y, T.translation.z]}
-        quaternion={quat}
-      >
-        <axesHelper args={[axisLength * (selected ? 1.35 : 1)]} />
-      </group>
-      {parentLine ? <ParentLink positions={parentLine} /> : null}
-    </group>
-  )
-}
-
-/** Foxglove-style TF axes (RGB) + yellow parent links in the display / fixed frame */
+/**
+ * Foxglove-style TF axes + parent links.
+ * Frame set changes rarely; poses mutate in useFrame (no remount on /tf).
+ */
 export function TfAxesVisualization() {
   const config = useAtomValue(tfDisplayAtom)
   const dataSourceMode = useAtomValue(dataSourceModeAtom)
-  const tfGen = useTfGeneration()
-  const lidarFrameId = useLidarFrameId()
+  const liftRef = useRef<THREE.Group>(null)
+  const rosRef = useRef<THREE.Group>(null)
+  const linksRef = useRef<THREE.LineSegments>(null)
+  const poolRef = useRef<Map<string, AxesEntry>>(new Map())
+  const configRef = useRef(config)
+  const modeRef = useRef(dataSourceMode)
+  configRef.current = config
+  modeRef.current = dataSourceMode
 
-  const fixedFrame = useMemo(
+  const linkPositions = useMemo(() => new Float32Array(LINK_FLOATS), [])
+  const linkMaterial = useMemo(
     () =>
-      resolveSceneFixedFrame({
-        configured: config.fixedFrame,
-        dataSourceMode,
-        lidarFrameId,
+      new THREE.LineBasicMaterial({
+        color: '#e8c84a',
+        toneMapped: false,
+        transparent: true,
+        opacity: 0.85,
       }),
-    [config.fixedFrame, dataSourceMode, lidarFrameId, tfGen],
+    [],
   )
 
-  const frames = useMemo(() => tfRuntimeStore.getFrameIds(), [tfGen])
-  const groundLiftY = useMemo(
-    () => getSceneGroundLiftY(dataSourceMode),
-    [tfGen, lidarFrameId, dataSourceMode],
-  )
+  useEffect(() => {
+    return () => {
+      linkMaterial.dispose()
+      const ros = rosRef.current
+      for (const entry of poolRef.current.values()) {
+        ros?.remove(entry.group)
+        entry.axes.geometry.dispose()
+        const mat = entry.axes.material
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose())
+        else mat.dispose()
+      }
+      poolRef.current.clear()
+    }
+  }, [linkMaterial])
 
-  if (!config.enabled || !config.showAxes || frames.length === 0) return null
+  useFrame(() => {
+    const cfg = configRef.current
+    const lift = liftRef.current
+    const ros = rosRef.current
+    const links = linksRef.current
+    if (!lift || !ros || !cfg.enabled || !cfg.showAxes) return
+
+    lift.position.set(0, getSceneGroundLiftY(modeRef.current), 0)
+
+    const fixedFrame = resolveSceneFixedFrame({
+      configured: cfg.fixedFrame,
+      dataSourceMode: modeRef.current,
+      lidarFrameId: lidarPointStore.frameId,
+    })
+    const frames = tfRuntimeStore.getFrameIds()
+    const live = new Set<string>()
+    let linkCount = 0
+
+    for (const frame of frames) {
+      if (cfg.hiddenFrames[frame] === true) continue
+      const T = lookupOrIdentity(fixedFrame, frame)
+      if (!T) continue
+      live.add(frame)
+
+      let entry = poolRef.current.get(frame)
+      if (!entry) {
+        const group = new THREE.Group()
+        group.userData.ignorePick = true
+        const axes = new THREE.AxesHelper(1)
+        axes.userData.ignorePick = true
+        group.add(axes)
+        ros.add(group)
+        entry = { group, axes }
+        poolRef.current.set(frame, entry)
+      }
+
+      entry.group.visible = true
+      entry.group.position.set(T.translation.x, T.translation.y, T.translation.z)
+      entry.group.quaternion.set(T.rotation.x, T.rotation.y, T.rotation.z, T.rotation.w)
+      const len = cfg.axisLength * (cfg.selectedFrame === frame ? 1.35 : 1)
+      entry.group.scale.setScalar(len)
+
+      if (cfg.showLinks && linkCount < MAX_TF_LINKS) {
+        const parentEdge = tfRuntimeStore.getEdge(frame)
+        if (parentEdge) {
+          const Tp = lookupOrIdentity(fixedFrame, parentEdge.parentFrame)
+          if (Tp) {
+            const o = linkCount * 6
+            linkPositions[o] = Tp.translation.x
+            linkPositions[o + 1] = Tp.translation.y
+            linkPositions[o + 2] = Tp.translation.z
+            linkPositions[o + 3] = T.translation.x
+            linkPositions[o + 4] = T.translation.y
+            linkPositions[o + 5] = T.translation.z
+            linkCount += 1
+          }
+        }
+      }
+    }
+
+    for (const [frame, entry] of poolRef.current) {
+      if (live.has(frame)) continue
+      ros.remove(entry.group)
+      entry.axes.geometry.dispose()
+      const mat = entry.axes.material
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose())
+      else mat.dispose()
+      poolRef.current.delete(frame)
+    }
+
+    if (links) {
+      const attr = links.geometry.attributes.position as THREE.BufferAttribute
+      attr.needsUpdate = true
+      links.geometry.setDrawRange(0, linkCount * 2)
+      links.visible = cfg.showLinks && linkCount > 0
+    }
+  })
+
+  if (!config.enabled || !config.showAxes) return null
 
   return (
-    <group name="tf-axes" position={[0, groundLiftY, 0]}>
-      <group quaternion={ROS_TO_THREE_Q}>
-        {frames.map((frame) => {
-          if (config.hiddenFrames[frame] === true) return null
-          return (
-            <FrameAxes
-              key={`${frame}-${tfGen}`}
-              frame={frame}
-              fixedFrame={fixedFrame}
-              axisLength={config.axisLength}
-              showLinks={config.showLinks}
-              selected={config.selectedFrame === frame}
+    <group ref={liftRef} name="tf-axes" userData={{ ignorePick: true }}>
+      <group ref={rosRef} quaternion={ROS_TO_THREE_Q} userData={{ ignorePick: true }}>
+        <lineSegments ref={linksRef} frustumCulled={false} userData={{ ignorePick: true }}>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[linkPositions, 3]}
+              usage={THREE.DynamicDrawUsage}
             />
-          )
-        })}
+          </bufferGeometry>
+          <primitive object={linkMaterial} attach="material" />
+        </lineSegments>
       </group>
     </group>
   )
