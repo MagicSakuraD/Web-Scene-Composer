@@ -9,6 +9,7 @@ import { useCameraFrustum } from '@/hooks/use-camera-frustum'
 import { useLaserScanViewer } from '@/hooks/use-laser-scan-viewer'
 import { LidarRuntime } from '@/components/panels/lidar-runtime'
 import { CameraViewerRuntime } from '@/components/panels/camera-viewer-runtime'
+import { ShelfJobRuntime } from '@/components/panels/shelf-job-runtime'
 
 function LaserScanRuntime() {
   useLaserScanViewer(true)
@@ -30,6 +31,7 @@ export function PlaybackRuntime() {
       <LidarRuntime />
       <CameraViewerRuntime />
       <LaserScanRuntime />
+      <ShelfJobRuntime />
     </>
   )
 }

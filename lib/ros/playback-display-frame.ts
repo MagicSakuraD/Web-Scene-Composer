@@ -14,8 +14,9 @@ export function getPlaybackCloudFrameId(): string {
 }
 
 /**
- * Fixed / display frame for TF axes, camera frustum, robot GLB, etc.
- * Live：Foxglove 自车系 — 优先 ego / base_link，车停在原点、世界绕车转；
+ * Fixed / display frame：静止世界系（Foxglove 3D 的 fixed_frame）。
+ * Live：优先 map / odom，地图与代价地图不动，小车在其上走；
+ * 视角跟随由 FollowEgoCamera 完成，不要把 Fixed Frame 设成 base_link。
  * 回放：点云传感器系（勿误用 LIDAR_TOP 导致 optical TF 失败）。
  */
 export function resolveSceneFixedFrame(opts: {
@@ -29,12 +30,11 @@ export function resolveSceneFixedFrame(opts: {
     return opts.lidarFrameId || getPlaybackCloudFrameId()
   }
   const frames = tfRuntimeStore.getFrameIds()
+  if (frames.includes('map')) return 'map'
+  if (frames.includes('odom')) return 'odom'
   if (frames.includes('ego')) return 'ego'
   if (frames.includes('base_link')) return 'base_link'
-  if (frames.includes('base_footprint')) return 'base_footprint'
-  if (frames.includes('odom')) return 'odom'
-  if (frames.includes('map')) return 'map'
-  return frames[0] ?? 'base_link'
+  return frames[0] ?? 'map'
 }
 
 /** 当前面板 Fixed Frame（与 TF 轴 / 视锥同一来源） */

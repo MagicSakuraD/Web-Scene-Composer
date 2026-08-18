@@ -30,14 +30,15 @@ import {
 } from '@/lib/ros/costmap-store'
 import { useI18n } from '@/hooks/use-i18n'
 import { Switch } from '@/components/ui/switch'
-import { BehaviorTimeline } from '@/components/panels/behavior-timeline'
 import { cn } from '@/lib/utils'
 import type { MessageKey } from '@/lib/i18n/messages'
 import type { SceneNode } from '@/lib/scene/types'
 
 function findNavWaypoint(nodes: Record<string, SceneNode>, preferredId: string | null) {
-  if (preferredId && nodes[preferredId]?.type === 'nav-waypoint') return preferredId
-  return Object.values(nodes).find((n) => n.type === 'nav-waypoint')?.id ?? null
+  const isPlain = (n: SceneNode | undefined) =>
+    n?.type === 'nav-waypoint' && n.markerRole !== 'pick' && n.markerRole !== 'drop'
+  if (preferredId && isPlain(nodes[preferredId])) return preferredId
+  return Object.values(nodes).find(isPlain)?.id ?? null
 }
 
 function CostmapStatusRow({
@@ -350,8 +351,6 @@ export function NavGoalPanel() {
           )}
         </section>
       </div>
-
-      {simActive && <BehaviorTimeline className="shrink-0" />}
     </div>
   )
 }

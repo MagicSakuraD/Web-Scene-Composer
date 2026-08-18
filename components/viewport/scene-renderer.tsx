@@ -42,6 +42,7 @@ import { ViewportSceneHelpers } from './viewport-scene-helpers'
 import { PhysicalDistantLightNode } from './physical-distant-light-node'
 import { AutoInstancedSync } from './auto-instanced-sync'
 import { NavigationArrowModel } from './navigation-arrow-model'
+import { PICK_MARKER_COLOR, DROP_MARKER_COLOR } from '@/lib/ros/shelf-job-config'
 import { runtimePoseStore } from '@/lib/ros/runtime-pose-store'
 import { VIEWPORT_WEBGPU_FEATURES } from '@/lib/viewport/visual-config'
 
@@ -232,7 +233,15 @@ function SceneNodeObject({ node }: { node: SceneTreeNode }) {
       case 'nav-waypoint':
         return (
           <Suspense fallback={null}>
-            <NavigationArrowModel />
+            <NavigationArrowModel
+              color={
+                node.markerRole === 'pick'
+                  ? PICK_MARKER_COLOR
+                  : node.markerRole === 'drop'
+                    ? DROP_MARKER_COLOR
+                    : undefined
+              }
+            />
           </Suspense>
         )
       case 'distant-light':

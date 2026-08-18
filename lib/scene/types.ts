@@ -46,6 +46,8 @@ export interface SceneNode {
   gltfKind?: GltfPrimKind
   gltfPath?: string
   assetRootId?: string
+  /** 货架作业：取货 / 卸货 Approach marker（与 Nav2 waypoint 共用 nav-waypoint） */
+  markerRole?: 'pick' | 'drop'
 }
 
 export interface SceneTreeNode extends SceneNode {

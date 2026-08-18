@@ -91,7 +91,12 @@ export async function dispatchMcapMessage({
       return
     }
 
-    if (schemaName === 'foxglove.FrameTransform' || topic === '/tf' || topic.endsWith('/tf')) {
+    if (
+      schemaName === 'foxglove.FrameTransform' ||
+      topic === '/tf' ||
+      topic.endsWith('/tf') ||
+      topic.endsWith('/tf_static')
+    ) {
       const transforms = decodeFoxgloveFrameTransform(schemaId, data)
       if (transforms) {
         tfRuntimeStore.setActive(true)

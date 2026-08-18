@@ -6,6 +6,7 @@ export const ADDABLE_PANEL_TYPES: BottomPanelTabType[] = [
   'diff-drive',
   'camera-viewer',
   'nav-goal',
+  'shelf-job',
 ]
 
 const PANEL_NAME_KEYS: Partial<Record<BottomPanelTabType, MessageKey>> = {
@@ -16,6 +17,7 @@ const PANEL_NAME_KEYS: Partial<Record<BottomPanelTabType, MessageKey>> = {
   'lidar-viewer': 'panels.lidarViewer.name',
   'material-graph': 'panels.materialGraph.name',
   'nav-goal': 'panels.navGoal.name',
+  'shelf-job': 'panels.shelfJob.name',
 }
 
 const PANEL_DESC_KEYS: Partial<Record<BottomPanelTabType, MessageKey>> = {
@@ -24,6 +26,7 @@ const PANEL_DESC_KEYS: Partial<Record<BottomPanelTabType, MessageKey>> = {
   'lidar-viewer': 'panels.lidarViewer.description',
   'material-graph': 'panels.materialGraph.description',
   'nav-goal': 'panels.navGoal.description',
+  'shelf-job': 'panels.shelfJob.description',
 }
 
 export function panelNameKey(type: BottomPanelTabType): MessageKey | undefined {

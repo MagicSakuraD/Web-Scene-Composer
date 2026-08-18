@@ -23,7 +23,7 @@ export const ODOM_TOPIC = '/chassis/odom'
 /** 依次尝试：Isaac Nova Carter → 通用 /odom */
 export const ODOM_TOPIC_CANDIDATES = ['/chassis/odom', '/odom'] as const
 
-export { TF_TOPIC } from '@/lib/ros/tf-config'
+export { TF_TOPIC, TF_STATIC_TOPIC } from '@/lib/ros/tf-config'
 
 export { FOXGLOVE_WS_URL } from '@/lib/ros/foxglove-config'
 
@@ -56,6 +56,7 @@ export type BottomPanelTabType =
   | 'lidar-viewer'
   | 'material-graph'
   | 'nav-goal'
+  | 'shelf-job'
 
 export interface BottomPanelTab {
   id: string

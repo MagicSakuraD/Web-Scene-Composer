@@ -1,5 +1,7 @@
 /** Foxglove 订阅的 TF 话题（Isaac Sim 动态关节） */
 export const TF_TOPIC = '/tf'
+/** map→odom 等常在 /tf_static，与 /tf 一并写入同一棵树 */
+export const TF_STATIC_TOPIC = '/tf_static'
 
 /**
  * 轮子 / 万向轮支架 child frame（Nova Carter + lw_hub 等常见命名）。

@@ -13,9 +13,8 @@ const _ego = new THREE.Vector3()
 const _delta = new THREE.Vector3()
 
 /**
- * Foxglove Follow pose（位置）：轨道中心锁在自车上，保留当前相机相对偏移。
- * 与 Fixed Frame = ego/base_link 配合时车在原点，本组件几乎不动；
- * Fixed Frame = odom 时则带着视角跟着车走。
+ * Foxglove follow-position：轨道中心锁在自车上，保留当前相机相对偏移。
+ * Fixed Frame 仍是 map/odom（地图不动）；这里只动相机，不改场景坐标系。
  */
 export function FollowEgoCamera() {
   const dataSourceActive = useAtomValue(dataSourceActiveAtom)

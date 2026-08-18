@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import type { GltfPrimKind, NodeType, SceneNode } from './types'
 
-export function getNodeIcon(node: Pick<SceneNode, 'type' | 'gltfKind'>) {
+export function getNodeIcon(node: Pick<SceneNode, 'type' | 'gltfKind' | 'markerRole'>) {
   if (node.type === 'gltf-prim' && node.gltfKind) {
     return getGltfPrimIcon(node.gltfKind)
   }
@@ -29,7 +29,15 @@ export function getNodeIcon(node: Pick<SceneNode, 'type' | 'gltfKind'>) {
     case 'sphere':
       return <Circle className="h-3.5 w-3.5 text-muted-foreground" />
     case 'nav-waypoint':
-      return <MapPin className="h-3.5 w-3.5 text-green-500" />
+      return (
+        <MapPin
+          className={
+            node.markerRole === 'drop'
+              ? 'h-3.5 w-3.5 text-red-500'
+              : 'h-3.5 w-3.5 text-green-500'
+          }
+        />
+      )
     case 'distant-light':
       return <Sun className="h-3.5 w-3.5 text-amber-400" />
     case 'point-light':

@@ -11,7 +11,7 @@ import {
   type CostmapKind,
   type CostmapStore,
 } from '@/lib/ros/costmap-store'
-import { rosPathPointToSceneThree } from '@/lib/ros/nav-path-transform'
+import { rosOccupancyOriginToThree } from '@/lib/ros/nav-path-transform'
 
 // 两层错开一点点高度，避免 z-fighting（全局在下、局部在上）
 const Y_LIFT_BY_KIND: Record<CostmapKind, number> = {
@@ -24,7 +24,6 @@ const RENDER_ORDER_BY_KIND: Record<CostmapKind, number> = {
 }
 const _originPos = new THREE.Vector3()
 const _originQuat = new THREE.Quaternion()
-const _yawEuler = new THREE.Euler(0, 0, 0, 'YXZ')
 
 /** Nav2 cost → RGBA（unknown 透明）；global 用冷色（蓝→紫）区分 local（绿→红） */
 function costToRgba(cost: number, out: Uint8Array, i: number, kind: CostmapKind) {
@@ -114,14 +113,7 @@ function updateCostmapWorldPose(
   originOri: { x: number; y: number; z: number; w: number },
   yLift: number,
 ) {
-  rosPathPointToSceneThree(originPos.x, originPos.y, originPos.z, frameId, _originPos)
-
-  // costmap 通常水平；取 ROS yaw → Three Y
-  const qRos = new THREE.Quaternion(originOri.x, originOri.y, originOri.z, originOri.w)
-  const yaw = new THREE.Euler().setFromQuaternion(qRos, 'ZYX').z
-  _yawEuler.set(0, yaw, 0)
-  _originQuat.setFromEuler(_yawEuler)
-
+  rosOccupancyOriginToThree(frameId, originPos, originOri, _originPos, _originQuat)
   mesh.position.copy(_originPos)
   mesh.position.y += yLift
   mesh.quaternion.copy(_originQuat)

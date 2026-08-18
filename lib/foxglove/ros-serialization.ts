@@ -857,3 +857,187 @@ export function decodeBehaviorTreeLog(data: Uint8Array): DecodedBehaviorTreeLog 
     return null
   }
 }
+
+export interface StartJobRequest {
+  pick_location_id: string
+  drop_location_id: string
+  pick_x: number
+  pick_y: number
+  pick_yaw: number
+  drop_x: number
+  drop_y: number
+  drop_yaw: number
+  pick_tag: number
+  drop_tag: number
+}
+
+const startJobRequestWriter = new MessageWriter([
+  {
+    name: 'shelf_mission_interfaces/srv/StartJob_Request',
+    definitions: [
+      { name: 'pick_location_id', type: 'string' },
+      { name: 'drop_location_id', type: 'string' },
+      { name: 'pick_x', type: 'float64' },
+      { name: 'pick_y', type: 'float64' },
+      { name: 'pick_yaw', type: 'float64' },
+      { name: 'drop_x', type: 'float64' },
+      { name: 'drop_y', type: 'float64' },
+      { name: 'drop_yaw', type: 'float64' },
+      { name: 'pick_tag', type: 'int32' },
+      { name: 'drop_tag', type: 'int32' },
+    ],
+  },
+])
+
+export function encodeStartJobRequest(req: StartJobRequest): Uint8Array {
+  return startJobRequestWriter.writeMessage({
+    pick_location_id: req.pick_location_id,
+    drop_location_id: req.drop_location_id,
+    pick_x: req.pick_x,
+    pick_y: req.pick_y,
+    pick_yaw: req.pick_yaw,
+    drop_x: req.drop_x,
+    drop_y: req.drop_y,
+    drop_yaw: req.drop_yaw,
+    pick_tag: req.pick_tag,
+    drop_tag: req.drop_tag,
+  })
+}
+
+export function decodeStartJobResponse(
+  data: Uint8Array,
+): { accepted: boolean; message: string } | null {
+  try {
+    const reader = new MessageReader([
+      {
+        name: 'shelf_mission_interfaces/srv/StartJob_Response',
+        definitions: [
+          { name: 'accepted', type: 'bool' },
+          { name: 'message', type: 'string' },
+        ],
+      },
+    ])
+    return reader.readMessage<{ accepted: boolean; message: string }>(data)
+  } catch {
+    return null
+  }
+}
+
+export interface DecodedJobStatus {
+  phase: number
+  phaseName: string
+  message: string
+  errorCode: number
+  childErrorCode: number
+  progress: number
+}
+
+/** 必须与 shelf_mission_interfaces/msg/JobStatus.msg 一致；int32 会让 CDR 读过头并整包丢弃 */
+const jobStatusDefs = [
+  { name: 'phase', type: 'uint8' },
+  { name: 'phase_name', type: 'string' },
+  { name: 'message', type: 'string' },
+  { name: 'error_code', type: 'uint8' },
+  { name: 'child_error_code', type: 'uint16' },
+  { name: 'progress', type: 'float32' },
+] as const
+
+const jobStatusReader = new MessageReader([
+  {
+    name: 'shelf_mission_interfaces/msg/JobStatus',
+    definitions: [...jobStatusDefs],
+  },
+])
+
+let jobStatusDecodeFailLogged = false
+
+function asFiniteNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function mapJobStatusFields(msg: Record<string, unknown>): DecodedJobStatus {
+  return {
+    phase: asFiniteNumber(msg.phase ?? msg.phase_id),
+    phaseName: String(msg.phase_name ?? msg.phaseName ?? ''),
+    message: String(msg.message ?? ''),
+    errorCode: asFiniteNumber(msg.error_code ?? msg.errorCode),
+    childErrorCode: asFiniteNumber(msg.child_error_code ?? msg.childErrorCode),
+    progress: asFiniteNumber(msg.progress),
+  }
+}
+
+function decodeJobStatusJson(data: Uint8Array): DecodedJobStatus | null {
+  if (data.byteLength < 2) return null
+  const start = data[0]
+  if (start !== 0x7b && start !== 0x5b && start !== 0x20 && start !== 0x0a) return null
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(data)) as unknown
+    const obj =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null
+    if (!obj) return null
+    if (obj.phase == null && obj.phase_name == null && obj.phaseName == null) return null
+    return mapJobStatusFields(obj)
+  } catch {
+    return null
+  }
+}
+
+function decodeJobStatusCdr(data: Uint8Array): DecodedJobStatus | null {
+  const attempts: Uint8Array[] = [data]
+  if (data.byteLength > 8) {
+    const kind = data[1]
+    const delimited = kind === 0x08 || kind === 0x09 || kind === 0x14 || kind === 0x15
+    if (delimited) {
+      const rewritten = new Uint8Array(data.byteLength - 4)
+      rewritten[0] = data[0]
+      rewritten[1] = kind === 0x09 || kind === 0x15 ? 0x01 : 0x00
+      rewritten[2] = data[2]
+      rewritten[3] = data[3]
+      rewritten.set(data.subarray(8), 4)
+      attempts.push(rewritten)
+    }
+  }
+
+  for (const buf of attempts) {
+    try {
+      const msg = jobStatusReader.readMessage<Record<string, unknown>>(buf)
+      const mapped = mapJobStatusFields(msg)
+      if (
+        mapped.phase !== 0 ||
+        mapped.phaseName.length > 0 ||
+        mapped.message.length > 0 ||
+        mapped.progress > 0
+      ) {
+        return mapped
+      }
+    } catch {
+      /* try next layout */
+    }
+  }
+  return null
+}
+
+/** shelf_mission_interfaces/msg/JobStatus — Foxglove 可能是 cdr 或 json */
+export function decodeJobStatus(
+  data: Uint8Array,
+  encoding?: string,
+): DecodedJobStatus | null {
+  const enc = encoding?.toLowerCase() ?? ''
+  const jsonFirst = enc.includes('json')
+  const decoded = jsonFirst
+    ? (decodeJobStatusJson(data) ?? decodeJobStatusCdr(data))
+    : (decodeJobStatusCdr(data) ?? decodeJobStatusJson(data))
+  if (decoded) return decoded
+  if (!jobStatusDecodeFailLogged) {
+    jobStatusDecodeFailLogged = true
+    console.warn('[ShelfJob] decodeJobStatus 失败', {
+      encoding: encoding || '(unknown)',
+      byteLength: data.byteLength,
+      head: Array.from(data.subarray(0, 16)),
+    })
+  }
+  return null
+}

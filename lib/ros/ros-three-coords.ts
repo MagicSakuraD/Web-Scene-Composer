@@ -114,6 +114,23 @@ export function threeWorldPoseToRos(
   }
 }
 
+/** ROS 平面朝向（绕 Z，弧度） */
+export function rosYawFromQuaternion(q: { x: number; y: number; z: number; w: number }): number {
+  return Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+}
+
+/** Three.js 节点欧拉角（度）→ ROS map yaw（弧度） */
+export function threeEulerDegToRosYaw(rotationDeg: [number, number, number]): number {
+  const e = new THREE.Euler(
+    THREE.MathUtils.degToRad(rotationDeg[0]),
+    THREE.MathUtils.degToRad(rotationDeg[1]),
+    THREE.MathUtils.degToRad(rotationDeg[2]),
+  )
+  const q = new THREE.Quaternion().setFromEuler(e)
+  const ros = threeQuaternionToRos(q.x, q.y, q.z, q.w)
+  return rosYawFromQuaternion(ros)
+}
+
 /**
  * 批量点坐标：Isaac Sim / ROS REP-103 (X前 Y左 Z上) → Three.js Y-up (x, z, -y)。
  * 用于 PointCloud2 写入 GPU 缓冲；与 odom 使用的 rosPositionToThree 一致。

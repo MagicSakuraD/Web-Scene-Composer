@@ -15,6 +15,7 @@ import {
   Radar,
   Layers,
   Navigation,
+  Package,
   X,
 } from 'lucide-react'
 import { useRef, useState, useEffect } from 'react'
@@ -35,6 +36,7 @@ import { LidarViewerPanel } from '@/components/panels/lidar-viewer-panel'
 import { MaterialGraphPanel } from '@/components/panels/material-graph-panel'
 import { NavGoalPanel } from '@/components/panels/nav-goal-panel'
 import { NavGoalRuntime } from '@/components/panels/nav-goal-runtime'
+import { ShelfJobPanel } from '@/components/panels/shelf-job-panel'
 import { ConsolePanel } from '@/components/panels/console-panel'
 import { TimelineBar } from '@/components/playback/timeline-bar'
 import { useI18n } from '@/hooks/use-i18n'
@@ -58,6 +60,8 @@ function tabIcon(type: BottomPanelTab['type']) {
       return Layers
     case 'nav-goal':
       return Navigation
+    case 'shelf-job':
+      return Package
     default:
       return FileBox
   }
@@ -201,6 +205,7 @@ export function ProjectBrowser({ isCollapsed, onToggleCollapse }: ProjectBrowser
           {activeTab.type === 'camera-viewer' && <CameraViewerPanel />}
           {activeTab.type === 'lidar-viewer' && <LidarViewerPanel />}
           {activeTab.type === 'nav-goal' && <NavGoalPanel />}
+          {activeTab.type === 'shelf-job' && <ShelfJobPanel />}
           {activeTab.type === 'material-graph' && <MaterialGraphPanel />}
         </div>
       )}

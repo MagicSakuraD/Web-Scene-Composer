@@ -19,11 +19,15 @@ import {
   decodeNavPath,
   decodeOccupancyGrid,
   decodeBehaviorTreeLog,
+  encodeStartJobRequest,
+  decodeStartJobResponse,
+  decodeJobStatus,
   type CmdVel,
   type DecodedCameraFrame,
   type DecodedLaserScan,
   type DecodedPointCloud,
   type RosPoseStamped,
+  type StartJobRequest,
 } from '@/lib/foxglove/ros-serialization'
 import { decodeRosCameraInfo } from '@/lib/ros/decode-camera-info'
 import type { DecodedCameraInfo } from '@/lib/ros/camera-info-store'
@@ -37,6 +41,7 @@ import {
   CMD_VEL_TOPIC,
   ODOM_TOPIC_CANDIDATES,
   TF_TOPIC,
+  TF_STATIC_TOPIC,
   type SimulateLogEntry,
 } from '@/lib/ros/atoms'
 import {
@@ -49,7 +54,13 @@ import {
   PLAN_SMOOTHED_TOPIC,
   PLAN_TOPIC,
 } from '@/lib/ros/nav-goal-config'
+import {
+  JOB_CANCEL_SERVICE,
+  JOB_START_SERVICE,
+  JOB_STATUS_TOPIC,
+} from '@/lib/ros/shelf-job-config'
 import { navGoalStore } from '@/lib/ros/nav-goal-store'
+import { shelfJobStore } from '@/lib/ros/shelf-job-store'
 import { navPathStore } from '@/lib/ros/nav-path-store'
 import { btTimelineStore } from '@/lib/ros/bt-timeline-store'
 import {
@@ -122,6 +133,7 @@ class FoxgloveBridgeManager {
   private odomSubscriptionId: SubscriptionId | null = null
   private odomChannelId: number | null = null
   private tfSubscriptionId: SubscriptionId | null = null
+  private tfStaticSubscriptionId: SubscriptionId | null = null
   private clientPublishEnabled = false
   private servicesEnabled = false
   private connectGeneration = 0
@@ -145,6 +157,10 @@ class FoxgloveBridgeManager {
   /** topic → 订阅 id（local + global costmap） */
   private costmapSubscriptionIds = new Map<string, SubscriptionId>()
   private navGoalActive = false
+  private shelfJobActive = false
+  private jobStatusSubscriptionId: SubscriptionId | null = null
+  private jobStatusEncoding = 'cdr'
+  private servicesById = new Map<number, Service>()
   private costmapHooksBound = false
   private costmapVisibilityUnsubs: (() => void)[] = []
   private cachedCameraTopics: readonly string[] = EMPTY_CAMERA_TOPICS
@@ -255,6 +271,9 @@ class FoxgloveBridgeManager {
             this.syncCostmapSubscriptions(client)
             this.syncBtLogSubscription(client)
           }
+          if (this.shelfJobActive) {
+            this.syncJobStatusSubscription(client)
+          }
         })
 
         client.on('unadvertise', (channelIds: number[]) => {
@@ -272,10 +291,12 @@ class FoxgloveBridgeManager {
 
         client.on('advertiseServices', (services: Service[]) => {
           if (generation !== this.connectGeneration) return
-          this.services = services
-          const hasNav = services.some((s) => s.name === NAV_GOAL_SERVICE)
-          const hasCancel = services.some((s) => s.name === NAV_CANCEL_SERVICE)
+          for (const s of services) this.servicesById.set(s.id, s)
+          this.services = Array.from(this.servicesById.values())
+          const hasNav = this.services.some((s) => s.name === NAV_GOAL_SERVICE)
+          const hasCancel = this.services.some((s) => s.name === NAV_CANCEL_SERVICE)
           navGoalStore.setServicesReady(hasNav && hasCancel)
+          this.refreshShelfJobServices()
           if (hasNav && hasCancel) {
             this.log({ level: 'info', message: 'Nav2 桥接服务已发现' })
             if (this.navGoalActive) {
@@ -284,6 +305,9 @@ class FoxgloveBridgeManager {
               this.syncCostmapSubscriptions(client)
               this.syncBtLogSubscription(client)
             }
+          }
+          if (this.shelfJobActive) {
+            this.syncJobStatusSubscription(client)
           }
         })
 
@@ -311,7 +335,10 @@ class FoxgloveBridgeManager {
             return
           }
 
-          if (event.subscriptionId === this.tfSubscriptionId) {
+          if (
+            event.subscriptionId === this.tfSubscriptionId ||
+            event.subscriptionId === this.tfStaticSubscriptionId
+          ) {
             const bytes = toUint8Array(event.data)
             const transforms = decodeTfMessage(bytes)
             if (!transforms) {
@@ -424,6 +451,13 @@ class FoxgloveBridgeManager {
             return
           }
 
+          if (event.subscriptionId === this.jobStatusSubscriptionId) {
+            const bytes = toUint8Array(event.data)
+            const status = decodeJobStatus(bytes, this.jobStatusEncoding)
+            if (status) shelfJobStore.applyStatus(status)
+            return
+          }
+
           for (const [topic, subId] of this.costmapSubscriptionIds) {
             if (event.subscriptionId === subId) {
               const bytes = toUint8Array(event.data)
@@ -484,7 +518,13 @@ class FoxgloveBridgeManager {
     if (tf && this.tfSubscriptionId == null) {
       this.tfSubscriptionId = client.subscribe(tf.id)
       tfRuntimeStore.setActive(true)
-      this.log({ level: 'info', message: `已订阅 ${TF_TOPIC}（轮子关节）` })
+      this.log({ level: 'info', message: `已订阅 ${TF_TOPIC}` })
+    }
+    const tfStatic = this.channels.find((c) => c.topic === TF_STATIC_TOPIC)
+    if (tfStatic && this.tfStaticSubscriptionId == null) {
+      this.tfStaticSubscriptionId = client.subscribe(tfStatic.id)
+      tfRuntimeStore.setActive(true)
+      this.log({ level: 'info', message: `已订阅 ${TF_STATIC_TOPIC}（map↔odom）` })
     }
   }
 
@@ -907,12 +947,14 @@ class FoxgloveBridgeManager {
     this.odomSubscriptionId = null
     this.odomChannelId = null
     this.tfSubscriptionId = null
+    this.tfStaticSubscriptionId = null
     this.clientPublishEnabled = false
     this.servicesEnabled = false
     this.channels = []
     this.channelsById.clear()
     this.cachedTopicInfos = []
     this.services = []
+    this.servicesById.clear()
     this.pendingServiceCalls.clear()
     this.navFeedbackSubscriptionId = null
     this.navStatusSubscriptionId = null
@@ -920,6 +962,7 @@ class FoxgloveBridgeManager {
     this.navPlanSubscriptionId = null
     this.navLocalPlanSubscriptionId = null
     this.btLogSubscriptionId = null
+    this.jobStatusSubscriptionId = null
     for (const sub of this.imageSubs.values()) {
       sub.channelId = null
       sub.subscriptionId = null
@@ -994,6 +1037,68 @@ class FoxgloveBridgeManager {
       navGoalStore.setServicesReady(false)
       navPathStore.reset()
     }
+  }
+
+  /** 货架作业面板：订阅 /job/status 并跟踪 /job/start、/job/cancel */
+  enableShelfJobTracking(active: boolean) {
+    this.shelfJobActive = active
+    if (!this.client) {
+      if (!active) {
+        shelfJobStore.setServicesReady(false)
+        shelfJobStore.setSubscribed(false)
+      }
+      return
+    }
+    if (active) {
+      this.refreshShelfJobServices()
+      this.syncJobStatusSubscription(this.client)
+    } else {
+      this.unsubscribeJobStatus()
+      shelfJobStore.setServicesReady(false)
+      shelfJobStore.setSubscribed(false)
+    }
+  }
+
+  private refreshShelfJobServices() {
+    const hasStart = this.services.some((s) => s.name === JOB_START_SERVICE)
+    const hasCancel = this.services.some((s) => s.name === JOB_CANCEL_SERVICE)
+    const ready = hasStart && hasCancel
+    if (ready && !shelfJobStore.servicesReady) {
+      this.log({ level: 'info', message: '货架作业服务已发现 (/job/start, /job/cancel)' })
+    }
+    shelfJobStore.setServicesReady(ready)
+  }
+
+  private findJobStatusChannel(): Channel | undefined {
+    const exact = this.channels.find((c) => {
+      const topic = c.topic.startsWith('/') ? c.topic : `/${c.topic}`
+      return topic === JOB_STATUS_TOPIC || topic.endsWith('/job/status')
+    })
+    if (exact) return exact
+    return this.channels.find((c) => /JobStatus/i.test(c.schemaName))
+  }
+
+  private syncJobStatusSubscription(client: FoxgloveClient) {
+    const channel = this.findJobStatusChannel()
+    if (channel && this.jobStatusSubscriptionId == null) {
+      this.jobStatusEncoding = channel.encoding || 'cdr'
+      this.jobStatusSubscriptionId = client.subscribe(channel.id)
+      shelfJobStore.setSubscribed(true)
+      this.log({
+        level: 'info',
+        message: `已订阅 ${channel.topic} (${channel.schemaName}, ${this.jobStatusEncoding})`,
+      })
+      return
+    }
+    shelfJobStore.setSubscribed(this.jobStatusSubscriptionId != null)
+  }
+
+  private unsubscribeJobStatus() {
+    if (this.client && this.jobStatusSubscriptionId != null) {
+      this.client.unsubscribe(this.jobStatusSubscriptionId)
+    }
+    this.jobStatusSubscriptionId = null
+    shelfJobStore.setSubscribed(false)
   }
 
   private ensureCostmapVisibilityHooks() {
@@ -1138,7 +1243,7 @@ class FoxgloveBridgeManager {
     return this.services.find((s) => s.name === name)
   }
 
-  private callService(serviceName: string, data: Uint8Array): Promise<Uint8Array> {
+  private callService(serviceName: string, data: Uint8Array, timeoutMs = 15000): Promise<Uint8Array> {
     if (!this.client || !this.servicesEnabled) {
       return Promise.reject(new Error('Foxglove Bridge 未开启 services capability'))
     }
@@ -1159,7 +1264,7 @@ class FoxgloveBridgeManager {
         if (!this.pendingServiceCalls.has(callId)) return
         this.pendingServiceCalls.delete(callId)
         reject(new Error(`服务调用超时: ${serviceName}`))
-      }, 15000)
+      }, timeoutMs)
     })
   }
 
@@ -1205,6 +1310,39 @@ class FoxgloveBridgeManager {
     }
   }
 
+  async startShelfJob(req: StartJobRequest): Promise<{ accepted: boolean; message: string }> {
+    shelfJobStore.beginStart('正在启动作业…')
+    try {
+      const data = await this.callService(JOB_START_SERVICE, encodeStartJobRequest(req), 5000)
+      const decoded = decodeStartJobResponse(data)
+      if (!decoded) throw new Error('无法解析 /job/start 响应')
+      shelfJobStore.applyStartResponse(decoded.accepted, decoded.message)
+      return decoded
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      shelfJobStore.setFailed(message)
+      throw err
+    }
+  }
+
+  async cancelShelfJob(): Promise<{ success: boolean; message: string }> {
+    try {
+      const data = await this.callService(JOB_CANCEL_SERVICE, encodeEmptyServiceRequest(), 5000)
+      const decoded = decodeBoolStringResponse(data)
+      if (!decoded) throw new Error('无法解析 /job/cancel 响应')
+      if (!decoded.success) {
+        shelfJobStore.setFailed(decoded.message)
+      } else {
+        shelfJobStore.setMessage(decoded.message)
+      }
+      return decoded
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      shelfJobStore.setFailed(message)
+      throw err
+    }
+  }
+
   getConnectedUrl() {
     return this.connectedUrl
   }
@@ -1217,6 +1355,9 @@ class FoxgloveBridgeManager {
       }
       if (this.tfSubscriptionId != null) {
         this.client.unsubscribe(this.tfSubscriptionId)
+      }
+      if (this.tfStaticSubscriptionId != null) {
+        this.client.unsubscribe(this.tfStaticSubscriptionId)
       }
       for (const sub of this.imageSubs.values()) {
         if (sub.subscriptionId != null) {
@@ -1239,6 +1380,7 @@ class FoxgloveBridgeManager {
         }
       }
       this.unsubscribeNavGoalTopics()
+      this.unsubscribeJobStatus()
       this.unsubscribeAllCostmaps()
       if (this.cmdVelChannelId != null) {
         this.client.unadvertise(this.cmdVelChannelId)
@@ -1252,15 +1394,19 @@ class FoxgloveBridgeManager {
     this.odomSubscriptionId = null
     this.odomChannelId = null
     this.tfSubscriptionId = null
+    this.tfStaticSubscriptionId = null
     this.clientPublishEnabled = false
     this.servicesEnabled = false
     this.channels = []
     this.channelsById.clear()
     this.services = []
+    this.servicesById.clear()
     this.pendingServiceCalls.clear()
     this.costmapSubscriptionIds.clear()
+    this.jobStatusSubscriptionId = null
     navPathStore.reset()
     btTimelineStore.reset()
+    shelfJobStore.reset()
     for (const store of costmapStores) {
       store.setSubscribed(false)
       store.clearGrid()
